@@ -48,7 +48,7 @@
 ;
 ; Revision History:
 ;
-; 1.0   Initial code.
+; 1.0   Initial code. 
 ;
 ;--------------------------------------------------------------------------------------------------
 ; Miscellaneous Notes
@@ -441,7 +441,7 @@ start:
 
 mainLoop:
 
-    call    handleSerialPortReceiveInt      ;debug mks -- remove this
+;    call    handleSerialPortReceiveInt      ;debug mks -- remove this
 
     banksel flags2                          ; handle packet in serial receive buffer if ready
     btfsc   flags2, SERIAL_PACKET_READY
@@ -463,8 +463,9 @@ handleSerialPacket:
 
 ;debug mks
 
+    banksel flags2
+    movf    serialRcvBuf, W
     banksel TXREG
-    movlw   0x99
     movwf   TXREG
 
 ;debug mks end
@@ -934,7 +935,14 @@ handleTimer0Int:
 ;--------------------------------------------------------------------------------------------------
 ; handleSerialPortReceiveInt
 ;
-; This function is called when a byte has been received by the serial port.
+; This function is called when a byte(s) has been received by the serial port. The byte(s) will be
+; checked to see if it is a header byte, a packet length byte, or a data byte. Data bytes will be
+; stored in a buffer. If an error occurs in receiving a packet, the function will ignore data
+; received before the error and begin watching for the next packet signature. Upon receiving a
+; complete packet, a flag will be set to notify the main loop.
+;
+; The receive register is a two byte fifo, so two bytes could be ready. This function will process
+; all bytes available.
 ;
 ; NOTE NOTE NOTE
 ; It is important to use no (or very few) subroutine calls.  The stack is only 16 deep and
@@ -1010,6 +1018,7 @@ rsl2:
     goto    rsl3                            ; if so, jump to store data byte
 
     movwf   serialRcvPktLen                 ; store the packet length
+    movwf   serialRcvPktCnt                 ; store it again to count down number of bytes stored
 
     bsf     flags2, LENGTH_BYTE_VALID       ; preset the flag, will be cleared on fail
 
@@ -1031,11 +1040,8 @@ rsl3:
     movf    serialIntScratch0, W            ; retrieve the new character
     movwf   INDF0                           ; store in buffer
 
-    incf    serialRcvPktCnt, F              ; increment number of bytes stored in buffer
-    movf    serialRcvPktCnt, W              ; all bytes received?
-    subwf   serialRcvPktLen, W
-    btfss   STATUS, Z
-    goto    rsllp                           ; if yes, continue collecting bytes
+    decfsz  serialRcvPktCnt, F              ; count down number of bytes stored
+    goto    rsllp                           ; continue collecting until counter reaches 0
 
 rsl4:
 
@@ -1058,8 +1064,6 @@ rslExit:
     bsf     RCSTA, CREN
 
 noOERRError:
-
-    return     ;debug mks -- remove this
 
     goto    endISR
 
