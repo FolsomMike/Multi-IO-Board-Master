@@ -277,23 +277,17 @@ SLAVE_PIC_READ_ID             EQU     b'10100101'
 
 ; bits in flags variable
 
-EXTENDED_MODE   EQU     0x0
-CUT_STARTED     EQU     0x1
-AT_DEPTH        EQU     0x2
-WALL_MODE       EQU     0x3
-DATA_MODIFIED   EQU     0x4
-UPDATE_DISPLAY  EQU     0x5
-UPDATE_DIR_SYM  EQU     0x6
-MOTOR_DIR_MODE	EQU     0x7
+UNUSED     EQU     0x0
 
-; bits in LCDFlags
+; bits in flags2 variable
 
-LCDBusy         EQU     0x00
-startBit        EQU     0x01
-stopBit         EQU     0x02
-endBuffer       EQU     0x03
-inDelay         EQU     0x04
+HEADER_BYTE_1_RCVD  EQU     0x00
+HEADER_BYTE_2_RCVD  EQU     0x01
+LENGTH_BYTE_VALID   EQU     0x02
+SERIAL_PACKET_READY EQU     0x03
 
+SERIAL_RCV_BUF_LEN      EQU .20     ; these should always match with one preceded by a period
+SERIAL_RCV_BUF_LEN_RES  EQU 20      ; one is used in the variable definition, one used in code
 
 ; end of Software Definitions
 ;--------------------------------------------------------------------------------------------------
@@ -311,14 +305,31 @@ inDelay         EQU     0x04
 
  cblock 0x20                ; starting address
 
-    flags                   ; bit 0: 0 = standard mode, 1 = extended cut depth mode
-                            ; bit 1: 0 = cut not started, 1 = cut started
-                            ; bit 2: 0 = depth not reached, 1 = depth reached
-                            ; bit 3: 0 = notch mode, 1 = wall reduction mode
-                            ; bit 4: 0 = data not modified, 1 = data modified (used by various functions)
-                            ; bit 5: 0 = no display update, 1 = display update (used by various functions)
-							; bit 6: 0 = no update direction symbol, 1 = update (used by various functions)
-							; bit 7: 0 = normal motor rotation, 1 = reverse motor direction
+    flags                   ; bit 0: 0 = 
+                            ; bit 1: 0 = 
+                            ; bit 2: 0 = 
+                            ; bit 3: 0 = 
+                            ; bit 4: 0 = 
+                            ; bit 5: 0 = 
+							; bit 6: 0 = 
+							; bit 7: 0 = 
+
+    flags2                  ; bit 0: 1 = first serial port header byte received
+                            ; bit 1: 1 = second serial port header byte received
+                            ; bit 2: 1 = serial port packet length byte received and validated
+                            ; bit 3: 1 = data packet ready for processing
+                            ; bit 4: 0 =
+                            ; bit 5: 0 =
+							; bit 6: 0 =
+							; bit 7: 0 =
+
+    serialIntScratch0
+    serialRcvPktLen
+    serialRcvPktCnt
+    serialRcvBufPtr
+    serialRcvBufLen
+
+    serialRcvBuf:SERIAL_RCV_BUF_LEN_RES
 
     hiCurrentLimitPot       ; value for digital pot which sets the high current limit value
     loCurrentLimitPot       ; value for digital pot which sets the high current limit value
@@ -428,11 +439,41 @@ start:
 
     call    setup           ; preset variables and configure hardware
 
-menuLoop:
+mainLoop:
 
-    goto    menuLoop
+    call    handleSerialPortReceiveInt      ;debug mks -- remove this
+
+    banksel flags2                          ; handle packet in serial receive buffer if ready
+    btfsc   flags2, SERIAL_PACKET_READY
+    call    handleSerialPacket
+
+    goto    mainLoop
     
 ; end of start
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; handleSerialPacket
+;
+; Processes a packet in the serial receive buffer.
+;
+
+handleSerialPacket:
+
+
+;debug mks
+
+    banksel TXREG
+    movlw   0x99
+    movwf   TXREG
+
+;debug mks end
+
+    call    resetSerialPortReceiveBuffer
+
+    return
+
+; end of handleSerialPacket
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
@@ -465,8 +506,8 @@ setup:
 
 ;start of hardware configuration
 
-    clrf   FSR0H            ;high byte of indirect addressing pointers -> 0
-    clrf   FSR1H
+    clrf    FSR0H            ;high byte of indirect addressing pointers -> 0
+    clrf    FSR1H
 
     clrf    INTCON          ; disable all interrupts
 
@@ -484,15 +525,11 @@ setup:
     
 ;end of hardware configuration
 
-    banksel flags
-
-    call    reallyBigDelay
-
 	
 ; enable the interrupts
 
 	bsf	    INTCON,PEIE	    ; enable peripheral interrupts (Timer0 and serial port are peripherals)
-    bsf     INTCON,T0IE     ; enable TMR0 interrupts
+;    bsf     INTCON,T0IE     ; enable TMR0 interrupts
     bsf     INTCON,GIE      ; enable all interrupts
 
     return
@@ -698,9 +735,16 @@ setupPortC:
 ; setupSerialPort
 ;
 ; Sets up the serial port for communication with the Rabbit micro-controller.
+; Also prepares the receive and transmit buffers for use.
 ;
 
 setupSerialPort:
+
+    call    resetSerialPortReceiveBuffer
+
+    banksel serialRcvBufLen     ;store buffer length constant in a variable for easier maths
+    movlw   SERIAL_RCV_BUF_LEN
+    movwf   serialRcvBufLen
 
     ;set the baud rate to 57,600 (will actually be 57.97K with 0.64% error)
     ;for Fosc of 16 Mhz: SYNC = 0, BRGH = 1, BRG16 = 1, SPBRG = 68
@@ -740,6 +784,40 @@ setupSerialPort:
     return
 
 ; end of setupSerialPort
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; resetSerialPortReceiveBuffer
+;
+; Resets all flags and variables associated with the serial port receive buffer.
+;
+
+resetSerialPortReceiveBuffer:
+
+    banksel flags2
+
+    bcf     flags2, HEADER_BYTE_1_RCVD
+    bcf     flags2, HEADER_BYTE_2_RCVD
+    bcf     flags2, LENGTH_BYTE_VALID
+    bcf     flags2, SERIAL_PACKET_READY
+
+    clrf    serialRcvPktLen
+    clrf    serialRcvPktCnt
+    movlw   serialRcvBuf
+    movwf   serialRcvBufPtr
+
+    banksel RCSTA           ; check for overrun error - must be cleared to receive more data
+    btfss   RCSTA, OERR
+    goto    RSPRBnoOERRError
+
+    bcf     RCSTA, CREN     ; clear error by disabling/enabling receiver
+    bsf     RCSTA, CREN
+
+RSPRBnoOERRError:
+
+    return
+
+; end of resetSerialPortReceiveBuffer
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
@@ -798,7 +876,7 @@ setDigitalPots:
 ; to the interrupt handler so that it will be handled.
 ;
 ; NOTE NOTE NOTE
-; It is important to use no (or very few) subroutine calls.  The stack is only 8 deep and
+; It is important to use no (or very few) subroutine calls.  The stack is only 16 deep and
 ; it is very bad for the interrupt routine to use it.
 ;
 
@@ -838,7 +916,7 @@ endISR:
 ; This function is called when the Timer0 register overflows.
 ;
 ; NOTE NOTE NOTE
-; It is important to use no (or very few) subroutine calls.  The stack is only 8 deep and
+; It is important to use no (or very few) subroutine calls.  The stack is only 16 deep and
 ; it is very bad for the interrupt routine to use it.
 ;
 
@@ -859,27 +937,118 @@ handleTimer0Int:
 ; This function is called when a byte has been received by the serial port.
 ;
 ; NOTE NOTE NOTE
-; It is important to use no (or very few) subroutine calls.  The stack is only 8 deep and
+; It is important to use no (or very few) subroutine calls.  The stack is only 16 deep and
 ; it is very bad for the interrupt routine to use it.
 ;
 ; The RCIF flag is cleared by reading all data from the two byte receive FIFO.
 ;
+; This code check each byte sequence to see if it starts with a header prefix (0x55,0xaa) followed
+; by a valid length byte. If these are found, the bytes after the length byte are stored in a
+; buffer. If the sequence is not matched or the supposed length byte is larger than the buffer,
+; all flags are reset and the search for the first header byte starts over.
+;
+; Packet format:
+;   0x55, 0xaa, length, data1, data2, data3,...checksum.
+;
+; This interrupt function does not verify the checksum; the main loop should do that if required.
+; Once a packet has been received, a flag is set to alert the main loop that it is ready for
+; processing. All further data will be ignored until the main loop clears that flag. If an error
+; occurs, the data received to that point will be discarded and the search for the next packet
+; begun anew.
+;
+; Thus, only one packet at a time can be handled. The processing required is typically minimal, so
+; the main loop should be able to process each packet before another is received. Some care should
+; be taken by the receiver to not flood the line with packets.
+;
+; The main loop does all the actual processing in order to minimize the overhead of the interrupt.
+;
 
 handleSerialPortReceiveInt:
 
-    ;RCREG is a two byte FIFO, so may contain two bytes; read until RCIF flag is clear
+    ; if the packet ready flag is set, ignore all data until main loop clears it
+
+    banksel flags2
+    btfsc   flags2, SERIAL_PACKET_READY
+    goto    rslExit
+
+    ;RCREG is a two byte FIFO and may contain two bytes; read until RCIF flag is clear
 
 readSerialLoop:
 
     banksel RCREG
     movf    RCREG, W        ; get byte from receive fifo
 
-    movwf   TXREG           ;  (this can probably handle two bytes at once if shifter is empty)
-                            ;debug mks -- remove these two lines, for testing only
+    banksel flags2
 
-    banksel PIR1            ; check if fifo empty
+    btfsc   flags2, HEADER_BYTE_1_RCVD      ; header byte 1 already received?
+    goto    rsl1                            ; if so, check for header byte 2
+
+    bsf     flags2, HEADER_BYTE_1_RCVD      ; preset the flag, will be cleared on fail
+
+    sublw   0x55                            ; check for first header byte of 0x55
+    btfsc   STATUS, Z                       ; equal?
+    goto    rsllp                           ; continue on leaving flag set
+
+    call    resetSerialPortReceiveBuffer    ; not header byte 1, reset all to restart search
+    goto    rsllp
+
+rsl1:
+    btfsc   flags2, HEADER_BYTE_2_RCVD      ; header byte 2 already received?
+    goto    rsl2                            ; if so, check for length byte
+
+    bsf     flags2, HEADER_BYTE_2_RCVD      ; preset the flag, will be cleared on fail
+
+    sublw   0xaa                            ; check for second header byte of 0xaa
+    btfsc   STATUS, Z                       ; equal?
+    goto    rsllp                           ; continue on leaving flag set
+
+    call    resetSerialPortReceiveBuffer    ; not header byte 2, reset all to restart search
+    goto    rsllp
+
+rsl2:
+    btfsc   flags2, LENGTH_BYTE_VALID       ; packet length byte already received and validated?
+    goto    rsl3                            ; if so, jump to store data byte
+
+    movwf   serialRcvPktLen                 ; store the packet length
+
+    bsf     flags2, LENGTH_BYTE_VALID       ; preset the flag, will be cleared on fail
+
+    subwf   serialRcvBufLen, W               ; check if packet length < buffer length
+    btfsc   STATUS, C                       ; carry cleared if borrow was required
+    goto    rsllp                           ; continue on leaving flag set
+
+    call    resetSerialPortReceiveBuffer    ; invalid length, reset all to restart search
+    goto    rsllp
+
+rsl3:
+
+    movwf   serialIntScratch0               ; store the new character
+    clrf    FSR0H                           ; load FSR0 with buffer pointer
+    movf    serialRcvBufPtr, W
+    movwf   FSR0L
+    incf    serialRcvBufPtr, F              ; advance the buffer pointer
+
+    movf    serialIntScratch0, W            ; retrieve the new character
+    movwf   INDF0                           ; store in buffer
+
+    incf    serialRcvPktCnt, F              ; increment number of bytes stored in buffer
+    movf    serialRcvPktCnt, W              ; all bytes received?
+    subwf   serialRcvPktLen, W
+    btfss   STATUS, Z
+    goto    rsllp                           ; if yes, continue collecting bytes
+
+rsl4:
+
+    bsf     flags2, SERIAL_PACKET_READY     ; flag main loop that a data packet is ready
+    goto    rslExit
+
+rsllp:
+
+    banksel PIR1                            ; loop until receive fifo is empty
     btfsc   PIR1, RCIF
     goto    readSerialLoop
+
+rslExit:
 
     banksel RCSTA           ; check for overrun error - must be cleared to receive more data
     btfss   RCSTA, OERR
@@ -889,6 +1058,8 @@ readSerialLoop:
     bsf     RCSTA, CREN
 
 noOERRError:
+
+    return     ;debug mks -- remove this
 
     goto    endISR
 
@@ -901,7 +1072,7 @@ noOERRError:
 ; This function is called when a byte has been received by the serial port.
 ;
 ; NOTE NOTE NOTE
-; It is important to use no (or very few) subroutine calls.  The stack is only 8 deep and
+; It is important to use no (or very few) subroutine calls.  The stack is only 16 deep and
 ; it is very bad for the interrupt routine to use it.
 ;
 ; The TXIF flag is cleared in the second instruction cycle after writing data to TXREG.
