@@ -443,6 +443,11 @@ mainLoop:
 
 ;    call    handleSerialPortReceiveInt      ;debug mks -- remove this
 
+;debug mks
+    banksel flags2
+    goto    rsl2    ;debug mks -- remove this
+;debug mks end
+
     banksel flags2                          ; handle packet in serial receive buffer if ready
     btfsc   flags2, SERIAL_PACKET_READY
     call    handleSerialPacket
@@ -1022,9 +1027,15 @@ rsl2:
 
     bsf     flags2, LENGTH_BYTE_VALID       ; preset the flag, will be cleared on fail
 
-    subwf   serialRcvBufLen, W               ; check if packet length < buffer length
+    movf    serialRcvPktLen, F              ; check for invalid packet size of 0
+    btfsc   STATUS, Z
+    goto    rs121
+
+    subwf   serialRcvBufLen, W              ; check if packet length < buffer length
     btfsc   STATUS, C                       ; carry cleared if borrow was required
     goto    rsllp                           ; continue on leaving flag set
+
+rs121:
 
     call    resetSerialPortReceiveBuffer    ; invalid length, reset all to restart search
     goto    rsllp
