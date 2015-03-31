@@ -328,6 +328,7 @@ SERIAL_RCV_BUF_LEN_RES  EQU 20      ; one is used in the variable definition, on
     serialRcvPktCnt
     serialRcvBufPtr
     serialRcvBufLen
+    serialPortErrorCnt
 
     serialRcvBuf:SERIAL_RCV_BUF_LEN_RES
 
@@ -441,11 +442,12 @@ start:
 
 mainLoop:
 
+;debug mks
+
 ;    call    handleSerialPortReceiveInt      ;debug mks -- remove this
 
-;debug mks
-    banksel flags2
-    goto    rsl2    ;debug mks -- remove this
+;    banksel flags2
+;    goto    rsl2    ;debug mks -- remove this
 ;debug mks end
 
     banksel flags2                          ; handle packet in serial receive buffer if ready
@@ -752,6 +754,8 @@ setupSerialPort:
     movlw   SERIAL_RCV_BUF_LEN
     movwf   serialRcvBufLen
 
+    clrf    serialPortErrorCnt
+
     ;set the baud rate to 57,600 (will actually be 57.97K with 0.64% error)
     ;for Fosc of 16 Mhz: SYNC = 0, BRGH = 1, BRG16 = 1, SPBRG = 68
 
@@ -969,6 +973,9 @@ handleTimer0Int:
 ; occurs, the data received to that point will be discarded and the search for the next packet
 ; begun anew.
 ;
+; The packet length byte is the number of data bytes plus one for the checksum byte. It does not
+; include the two header bytes or the length byte itself.
+;
 ; Thus, only one packet at a time can be handled. The processing required is typically minimal, so
 ; the main loop should be able to process each packet before another is received. Some care should
 ; be taken by the receiver to not flood the line with packets.
@@ -1000,10 +1007,9 @@ readSerialLoop:
 
     sublw   0x55                            ; check for first header byte of 0x55
     btfsc   STATUS, Z                       ; equal?
-    goto    rsllp                           ; continue on leaving flag set
+    goto    rsllp                           ; continue on, leaving flag set
 
-    call    resetSerialPortReceiveBuffer    ; not header byte 1, reset all to restart search
-    goto    rsllp
+    goto    rslError                        ; not header byte 1, reset all to restart search
 
 rsl1:
     btfsc   flags2, HEADER_BYTE_2_RCVD      ; header byte 2 already received?
@@ -1013,10 +1019,9 @@ rsl1:
 
     sublw   0xaa                            ; check for second header byte of 0xaa
     btfsc   STATUS, Z                       ; equal?
-    goto    rsllp                           ; continue on leaving flag set
+    goto    rsllp                           ; continue on, leaving flag set
 
-    call    resetSerialPortReceiveBuffer    ; not header byte 2, reset all to restart search
-    goto    rsllp
+    goto    rslError                        ; not header byte 2, reset all to restart search
 
 rsl2:
     btfsc   flags2, LENGTH_BYTE_VALID       ; packet length byte already received and validated?
@@ -1029,14 +1034,15 @@ rsl2:
 
     movf    serialRcvPktLen, F              ; check for invalid packet size of 0
     btfsc   STATUS, Z
-    goto    rs121
+    goto    rslError
 
     subwf   serialRcvBufLen, W              ; check if packet length < buffer length
     btfsc   STATUS, C                       ; carry cleared if borrow was required
-    goto    rsllp                           ; continue on leaving flag set
+    goto    rsllp                           ; continue on, leaving flag set
 
-rs121:
+rslError:
 
+    incf    serialPortErrorCnt, F           ; track errors
     call    resetSerialPortReceiveBuffer    ; invalid length, reset all to restart search
     goto    rsllp
 
