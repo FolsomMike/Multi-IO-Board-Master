@@ -444,6 +444,8 @@ mainLoop:
 
 ;debug mks
 
+ ;   call    handleSerialPacket
+
 ;    call    handleSerialPortReceiveInt      ;debug mks -- remove this
 
 ;    banksel flags2
@@ -467,6 +469,29 @@ mainLoop:
 
 handleSerialPacket:
 
+    ;verify the checksum
+
+    banksel flags2
+
+    movf    serialRcvPktLen, W          ; copy number of bytes to variable for counting
+    movwf   serialRcvPktCnt
+
+    clrf    FSR0H                       ; point FSR0 at start of receive buffer
+    movlw   serialRcvBuf
+    movwf   FSR0L
+
+    clrw                                ; preload W with zero
+
+hspSumLoop:
+
+    addwf   INDF0, W                    ; sum each data byte and the checksum byte at the end
+    incf    FSR0L, F
+    decfsz  serialRcvPktCnt, F
+    goto    hspSumLoop
+
+    movf    WREG, F                     ; test for zero
+    btfss   STATUS, Z                   ; sum should be zero if checksum correct
+    goto    hspError
 
 ;debug mks
 
@@ -477,9 +502,12 @@ handleSerialPacket:
 
 ;debug mks end
 
-    call    resetSerialPortReceiveBuffer
+    goto    resetSerialPortReceiveBuffer
 
-    return
+hspError:
+
+    incf    serialPortErrorCnt, F           ; track errors
+    goto    resetSerialPortReceiveBuffer
 
 ; end of handleSerialPacket
 ;--------------------------------------------------------------------------------------------------
@@ -953,10 +981,6 @@ handleTimer0Int:
 ; The receive register is a two byte fifo, so two bytes could be ready. This function will process
 ; all bytes available.
 ;
-; NOTE NOTE NOTE
-; It is important to use no (or very few) subroutine calls.  The stack is only 16 deep and
-; it is very bad for the interrupt routine to use it.
-;
 ; The RCIF flag is cleared by reading all data from the two byte receive FIFO.
 ;
 ; This code check each byte sequence to see if it starts with a header prefix (0x55,0xaa) followed
@@ -974,13 +998,21 @@ handleTimer0Int:
 ; begun anew.
 ;
 ; The packet length byte is the number of data bytes plus one for the checksum byte. It does not
-; include the two header bytes or the length byte itself.
+; include the two header bytes or the length byte itself. If the length byte value is 0 or is
+; greater than the buffer size, the packet will be ignored. If the length byte value is greater
+; than the actual number of bytes sent (but still less than the buffer size), the current packet
+; AND the next packet(s) will be discarded as the interrupt routine will wait until enough bytes
+; are received from subsequent packets to equal the erroneously large length byte value.
 ;
 ; Thus, only one packet at a time can be handled. The processing required is typically minimal, so
 ; the main loop should be able to process each packet before another is received. Some care should
 ; be taken by the receiver to not flood the line with packets.
 ;
 ; The main loop does all the actual processing in order to minimize the overhead of the interrupt.
+;
+; NOTE NOTE NOTE
+; It is important to use no (or very few) subroutine calls.  The stack is only 16 deep and
+; it is very bad for the interrupt routine to use it.
 ;
 
 handleSerialPortReceiveInt:
@@ -1039,11 +1071,12 @@ rsl2:
     subwf   serialRcvBufLen, W              ; check if packet length < buffer length
     btfsc   STATUS, C                       ; carry cleared if borrow was required
     goto    rsllp                           ; continue on, leaving flag set
+                                            ; if invalid length, reset all to restart search
 
 rslError:
 
     incf    serialPortErrorCnt, F           ; track errors
-    call    resetSerialPortReceiveBuffer    ; invalid length, reset all to restart search
+    call    resetSerialPortReceiveBuffer    
     goto    rsllp
 
 rsl3:
