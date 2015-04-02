@@ -128,15 +128,21 @@
 ;#define debug 1     ; set debug testing "on"
 
 
-; Rabbit Commands -- sent by Rabbit to trigger various actions
+; Rabbit to Master PIC Commands -- sent by Rabbit to trigger actions
 
-RABBIT_GET_STATUS               EQU 0x00
-RABBIT_RESET_ENCODERS           EQU 0x01
-RABBIT_GET_ENCODERS             EQU 0x02
-RABBIT_GET_PEAK_DATA            EQU 0x03
-RABBIT_SET_GAIN                 EQU 0x04
-RABBIT_SET_OFFSET               EQU 0x05
-RABBIT_RESET                    EQU 0xff
+RBT_GET_ALL_STATUS               EQU 0x00
+RBT_GET_SLAVE_PEAK_DATA          EQU 0x01
+;RABBIT_RESET_ENCODERS           EQU 0x01
+;RABBIT_GET_ENCODERS             EQU 0x02
+;RABBIT_GET_PEAK_DATA            EQU 0x03
+;RABBIT_SET_GAIN                 EQU 0x04
+;RABBIT_SET_OFFSET               EQU 0x05
+;RABBIT_RESET                    EQU 0xff
+
+; Master PIC to Slave PIC Commands -- sent by Master to Slaves via I2C to trigger actions
+
+PIC_GET_ALL_STATUS              EQU 0x00
+PIC_START_CMD                   EQU 0x01
 
 ; end of Defines
 ;--------------------------------------------------------------------------------------------------
@@ -489,20 +495,9 @@ hspSumLoop:
     decfsz  serialRcvPktCnt, F
     goto    hspSumLoop
 
-    movf    WREG, F                     ; test for zero
-    btfss   STATUS, Z                   ; sum should be zero if checksum correct
-    goto    hspError
-
-;debug mks
-
-    banksel flags2
-    movf    serialRcvBuf, W
-    banksel TXREG
-    movwf   TXREG
-
-;debug mks end
-
-    goto    resetSerialPortReceiveBuffer
+    movf    WREG, F                         ; test for zero
+    btfsc   STATUS, Z                       ; error if not zero
+    goto    parseCommandFromSerialPacket    ; checksum good so handle command
 
 hspError:
 
@@ -510,6 +505,75 @@ hspError:
     goto    resetSerialPortReceiveBuffer
 
 ; end of handleSerialPacket
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; parseCommandFromSerialPacket
+;
+; Parses the command byte in a serial packet and performs the appropriate action.
+;
+
+parseCommandFromSerialPacket:
+
+    banksel flags2
+
+; parse the command byte by comparing with each command
+
+    movf    serialRcvBuf, W
+    sublw   RBT_GET_ALL_STATUS
+    btfsc   STATUS,Z
+    goto    handleAllStatusRbtCmd
+
+    movf    serialRcvBuf, W
+    sublw   RBT_GET_SLAVE_PEAK_DATA
+    btfsc   STATUS,Z
+    goto    handleGetSlavePeakDataRbtCmd
+
+    goto    resetSerialPortReceiveBuffer
+
+; end of parseCommandFromSerialPacket
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; handleAllStatusRbtCmd
+;
+; Handles the PIC_GET_ALL_STATUS command, returning the status byte, the error count for data from
+; the Rabbit, the error count for data from the Slave PICS, and the status and error count for
+; data from the Master as retrieved from each of the Slaves.
+;
+
+handleAllStatusRbtCmd:
+
+    banksel flags2
+
+    movlw   0xac
+    banksel TXREG
+    movwf   TXREG
+
+    goto    resetSerialPortReceiveBuffer
+
+; end of handleAllStatusRbtCmd
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; handleGetSlavePeakDataRbtCmd
+;
+; Handles the PIC_GET_ALL_STATUS command, returning the status byte, the error count for data from
+; the Rabbit, the error count for data from the Slave PICS, and the status and error count for
+; data from the Master as retrieved from each of the Slaves.
+;
+
+handleGetSlavePeakDataRbtCmd:
+
+    banksel flags2
+
+    movlw   0x69
+    banksel TXREG
+    movwf   TXREG
+
+    goto    resetSerialPortReceiveBuffer
+
+; end of handleGetSlavePeakDataRbtCmd
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
