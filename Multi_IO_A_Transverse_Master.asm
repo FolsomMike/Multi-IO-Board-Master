@@ -983,13 +983,13 @@ handleTimer0Int:
 ;
 ; The RCIF flag is cleared by reading all data from the two byte receive FIFO.
 ;
-; This code check each byte sequence to see if it starts with a header prefix (0x55,0xaa) followed
+; This code check each byte sequence to see if it starts with a header prefix (0xaa,0x55) followed
 ; by a valid length byte. If these are found, the bytes after the length byte are stored in a
 ; buffer. If the sequence is not matched or the supposed length byte is larger than the buffer,
 ; all flags are reset and the search for the first header byte starts over.
 ;
 ; Packet format:
-;   0x55, 0xaa, length, data1, data2, data3,...checksum.
+;   0xaa, 0x55, length, data1, data2, data3,...checksum.
 ;
 ; This interrupt function does not verify the checksum; the main loop should do that if required.
 ; Once a packet has been received, a flag is set to alert the main loop that it is ready for
@@ -1037,7 +1037,7 @@ readSerialLoop:
 
     bsf     flags2, HEADER_BYTE_1_RCVD      ; preset the flag, will be cleared on fail
 
-    sublw   0x55                            ; check for first header byte of 0x55
+    sublw   0xaa                            ; check for first header byte of 0xaa
     btfsc   STATUS, Z                       ; equal?
     goto    rsllp                           ; continue on, leaving flag set
 
@@ -1049,7 +1049,7 @@ rsl1:
 
     bsf     flags2, HEADER_BYTE_2_RCVD      ; preset the flag, will be cleared on fail
 
-    sublw   0xaa                            ; check for second header byte of 0xaa
+    sublw   0x55                            ; check for second header byte of 0x55
     btfsc   STATUS, Z                       ; equal?
     goto    rsllp                           ; continue on, leaving flag set
 
