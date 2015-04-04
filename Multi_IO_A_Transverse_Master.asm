@@ -27,6 +27,65 @@
 ; never read by the Rabbit on the Ring 2 board as the encoder/eye data is useless as there are no
 ; such devices connected to the Ring 2 board.
 ;
+; Options Configurable at Runtime
+;
+; The Master PIC code is identical in the Longitudinal, Transverse, and Wall boards. Each of those
+; boards do require unique processing. The Rabbit is the only device on the board which is
+; programmed to know what type of board it inhabits and the host can thus determine the type as
+; well by communication with the Rabbit. The Rabbit or the host can then set flags in the Master
+; PIC and Slave PICs to activate different types of processing.
+;
+; Encoder Tracking on Transverse Ring 1 Board
+;
+; The Transverse Ring 1 board Master PIC monitors two quadrature encoder inputs via the RC3/RC4 and
+; RC6/RC7 input ports. It also monitors a photo-eye to detect entry of the tube into the system via
+; RA1 or RC5 input ports. The Master PIC sends an interrupt to the Rabbit which in turn signals the
+; host when the encoders have moved a preselected distance and when the photo-eye has become
+; blocked or unblocked.
+;
+; Photo Eye Tracking on Longitudinal Board(s)
+;
+; Some systems have two Longitudinal boards, one for each shoe. For systems with 4 channel muxes,
+; only one board is required. Both boards monitor the TDC rotating head photo-eye so that they
+; can calculate clock position information and transmit it to the Slave PICs so they can in turn
+; tag each peak with its associated circumferential location.
+;
+; On the Longitudinal boards, Opto1 and R156 are not installed so they do not drive the Sync line.
+; This allows the Master PIC to drive the Sync line to send clock signals to the Slave PICs. The
+; TDC input on Sync Reset occurs once per head revolution; the Master PIC measures this period and
+; divides the the count down into clock positions (12, 24, etc. depending on the desired
+; resolution). The Master PIC then uses this divided period to generate a clock position signal
+; using an internal timer to signal the Slave PICs via the Sync line. Each time the Sync line
+; pulses it indicates a new clock position.
+;
+; The Slave PICs track the incoming Sync pulse with a counter connected to the input which they
+; reset each time they receive a pulse from the Sync Reset line. Thus, the value in the counter is
+; always equal to the clock position. This allows the Slaves to quickly tag the peaks with the value
+; in the counter at the time the peak is detected without requiring any extra monitoring of the Sync
+; line or incrementing of the counter...it's all handled automatically.
+;
+; Sync & Sync Reset I/O Configuration
+;
+; NOTE: The sync input is defined as SYNCT in this program as SYNC is already a pre-defined term.
+;
+;   Master PIC
+;
+;    Sync Reset connected to RA0 and RA5, either pin can be used to monitor the signal.
+;    RA0 input allows Interrupt on Change (IOC) of the signal.
+;    RA5 input allows both IOC and tracking by counter Timer1.
+;
+;    As RA5 also provides the IOC option, the connection to RA0 is only to maintain design
+;    consistency with the Slave PICs which can only use RA0 as they must use RA5 as the system
+;    clock input.
+;
+;    Normally, the Master PIC monitors the Sync Reset RA0 using the IOC option. The Sync line is
+;    driven as an output on RC5 to the Slave PICs while RA1 is set to an input to avoid conflict.
+;
+;   Slave PICs
+;
+;    Sync Reset is monitored via RA0 using the IOC option. The Sync line is monitored via RC5
+;    configured to count pulses with Timer 0. The Sync Reset pulse triggers a reset of the counter.
+;
 ;--------------------------------------------------------------------------------------------------
 ; Notes on PCLATH
 ;
@@ -74,38 +133,38 @@
 ;
 ; Function by Pin
 ;
-; Port A
+; Port A        Pin/Options/Selected Option/Description  (only the most common options are listed)
 ;
-; RA0   In  - ???
-; RA1   In  - ???
-; RA2   xxx - not implemented in PIC16f1459
-; RA3   In  - ???
-; RA4   In  - ???
-; RA5   Out - ???
-; RA6   xxx - not implemented in PIC16f1459
-; RA7   xxx - not implemented in PIC16f1459
+; RA0   I/*,IOC,USB-D+                  ~ I ~ Sync Reset
+; RA1   I/*,IOC,USB-D-                  ~ I ~ not used, tied to Sync on RC5
+; RA2   not implemented in PIC16f1459
+; RA3   I/*,IOC,T1G,MSSP-SS,Vpp,MCLR    ~ Vpp
+; RA4   I/O,IOC,T1G,CLKOUT,CLKR, AN3    ~ CLKOUT
+; RA5   I/O,IOC,T1CKI,CLKIN             ~ I ~ not used, tied to Sync Reset on RA0
+; RA6   not implemented in PIC16f1459
+; RA7   not implemented in PIC16f1459
 ;
-; Port B
+; Port B        Pin/Options/Selected Option/Description  (only the most common options are listed)
 ;
-; RB0   xxx - not implemented in PIC16f1459
-; RB1   xxx - not implemented in PIC16f1459
-; RB2   xxx - not implemented in PIC16f1459
-; RB3   xxx - not implemented in PIC16f1459
-; RB4   I/O - I2CSDA
-; RB5   In  - ???
-; RB6   Out - I2CSCL
-; RB7   Out - ???
+; RB0   not implemented in PIC16f1459
+; RB1   not implemented in PIC16f1459
+; RB2   not implemented in PIC16f1459
+; RB3   not implemented in PIC16f1459
+; RB4   I/O,IOC,MSSP-SDA/SDI,AN10       ~ I ~ I2CSDA, I2C bus data line to slaves
+; RB5   I/O,IOC,EUSART-RX/DX,AN11       ~ I ~ EUSART-RX, serial port data from Rabbit
+; RB6   I/O,IOC,MSSP-SCL/SCK            ~ I ~ I2CSCL, I2C bus clock line to slaves
+; RB7   I/O,IOC,EUSART-TX/CK            ~ O ~ EUSART-TX, serial port data to Rabbit
 ;
-; Port C
+; Port C        Pin/Options/Selected Option/Description  (only the most common options are listed)
 ;
-; RC0   Out - ???
-; RC1   In  - ???
-; RC2   In  - ???
-; RC3   Out - ???
-; RC4   Out - ???
-; RC5   In  - ???
-; RC6   Out - ???
-; RC7   In  - ???
+; RC0   I/O,AN4,C1/2IN+,ICSPDAT,Vref    ~ ICSPDAT ~ in circuit programming data line
+; RC1   I/O,AN5,C1/2IN1-,ICSPCLK,INT    ~ ICSPCLK ~ in circuit programming clock line
+; RC2   I/O,AN6,C1/2IN2-,DACOUT1        ~ O ~ signal to Rabbit Interrupt pin
+; RC3   I/O,AN7,C1/2IN3-,DACOUT2,CLKR   ~ I ~ encoder 1, A input
+; RC4   I/O,C1/2OUT                     ~ I ~ encoder 1, B input
+; RC5   I/O,T0CKI,PWM1                  ~ O ~ Sync output to slaves
+; RC6   I/O,AN8,PWM2,MSSP-SS            ~ I ~ encoder 2, A input
+; RC7   I/O,AN9,MSSP-SDO                ~ I ~ encoder 2, B input
 ;
 ;end of Hardware Control Description
 ;--------------------------------------------------------------------------------------------------
@@ -169,7 +228,7 @@ PIC_START_CMD                   EQU 0x01
 
 ; CONFIG1
 ; __config 0xF9E4
- __CONFIG _CONFIG1, _FOSC_INTOSC & _WDTE_OFF & _PWRTE_OFF & _MCLRE_OFF & _CP_OFF & _BOREN_OFF & _CLKOUTEN_ON & _IESO_OFF & _FCMEN_OFF
+ __CONFIG _CONFIG1, _FOSC_INTOSC & _WDTE_OFF & _PWRTE_OFF & _MCLRE_ON & _CP_OFF & _BOREN_OFF & _CLKOUTEN_ON & _IESO_OFF & _FCMEN_OFF
 ; CONFIG2
 ; __config 0xFFFF
  __CONFIG _CONFIG2, _WRT_ALL & _CPUDIV_NOCLKDIV & _USBLSCLK_48MHz & _PLLMULT_4x & _PLLEN_DISABLED & _STVREN_ON & _BORV_LO & _LPBOR_OFF & _LVP_OFF
@@ -177,7 +236,7 @@ PIC_START_CMD                   EQU 0x01
 ; _FOSC_INTOSC -> internal oscillator, I/O function on OSC1/CLKIN pin
 ; _WDTE_OFF -> watch dog timer disabled
 ; _PWRTE_OFF -> Power Up Timer disabled
-; _MCLRE_OFF -> MCLR/VPP pin is digital input
+; _MCLRE_ON -> MCLR/VPP pin is Master Clear with weak pull-up automatically enabled
 ; _CP_OFF -> Flash Program Memory Code Protection off
 ; _BOREN_OFF -> Power Brown-out Reset off
 ; _CLKOUTEN_ON -> CLKOUT function on, Fosc/4 -> CLKOUT pin
@@ -203,55 +262,58 @@ PIC_START_CMD                   EQU 0x01
 ;--------------------------------------------------------------------------------------------------
 ; Hardware Definitions
 ;
-; NOTE: All ports for outputs are defined as the latches for the port. Writing to the latches
-; avoids problems with the read-modify-write system of the PIC.
+; Note regarding Port Latches vs Pins
 ;
-; For inputs, the port must be read.
+; Writing to individial port pins can cause problems because that uses a read-modify-write
+; operation. If the pins are read, some outputs could read differently than they are programmed in
+; the port latch if the external hardware is causing the outputs to change state slowly. Thus,
+; when the read-modify-write operation writes back to the latch, the wrong value for some pins
+; might be permanently written.
+;
+; To avoid this, such operations should be done to the port latches (LATA, LATB, LATC) instead of
+; the port (PORTA, PORTB, PORTC). This ensures that the values read are what have actually been
+; programmed.
+;
+; For convenience, the port defines below are set to the Port when the associated signal is an
+; input and to the Latch when the associated signal is an output so that the proper register will
+; be used for each case.
 ;
 
-; Port A
+; Port A defines
 
-SERIAL_IN_P     EQU     PORTA
-SERIAL_IN       EQU     RA0         ; input ~ RA0 can only be input on PIC16f1459
-UNUSED_RA1_P    EQU     PORTA
-UNUSED_RA1      EQU     RA1         ; input ~ RA1 can only be input on PIC16f1459
-;NA_RA2         EQU     RA2         ; RA2 not implemented on PIC16f1459
-SHORT_DETECT_P  EQU     PORTA
-SHORT_DETECT    EQU     RA3         ; input ~ RA3 can only be input on PIC16f1459
-HI_LIMIT_P      EQU     PORTA
-HI_LIMIT        EQU     RA4         ; input ~ cutting current hight limit
-POWER_ON_P      EQU     PORTA
-POWER_ON        EQU     RA5         ; output
-;NA_RA6         EQU     RA6         ; RA6 not implemented on PIC16f1459
-;NA_RA7         EQU     RA7         ; RA7 not implemented on PIC16f1459
+SYNC_RESET      EQU 0           ; input on RA0
+SYNCT_RA1       EQU 1           ; not used, must be input, same signal as RC5
+RA2             EQU 2           ; not implemented in PIC16f1459
+RA3             EQU 3           ; Vpp ~ not used as I/O
+RA4             EQU 4           ; CLKOUT ~ not used as I/O
+SYNC_RESET_RA5  EQU 5           ; not used, same signal as RA0
 
-; Port B
+SYNC_RESET_RD   EQU PORTA
 
-I2CSDA_LINE     EQU     RB4
-JOG_DWN_SW_P    EQU     PORTB
-JOG_DWN_SW      EQU     RB5         ; input
-I2CSCL_LINE     EQU     RB6
-SERIAL_OUT_P    EQU     PORTB
-SERIAL_OUT      EQU     RB7         ; output ~ serial data out to other devices
+; Port B defines
 
-; Port C
+RB0             EQU 0           ; not implemented in PIC16f1459
+RB1             EQU 1           ; not implemented in PIC16f1459
+RB2             EQU 2           ; not implemented in PIC16f1459
+RB3             EQU 3           ; not implemented in PIC16f1459
+I2CSDA          EQU 4           ; I2C bus SDA line
+SERIAL_IN       EQU 5           ; serial port in from Rabbit
+I2CSCL          EQU 6           ; I2C bus SCL line
+SERIAL_OUT      EQU 7           ; serial port out to Rabbit
 
-MOTOR_ENABLE_P  EQU     PORTC
-MOTOR_ENABLE    EQU     RC0         ; output
-MODE_SW_P       EQU     PORTC
-MODE_SW         EQU     RC1         ; input
-JOG_UP_SW_P     EQU     PORTC
-JOG_UP_SW       EQU     RC2         ; input
-MOTOR_DIR_P     EQU     PORTC
-MOTOR_DIR       EQU     RC3         ; output
-MOTOR_STEP_P    EQU     PORTC
-MOTOR_STEP      EQU     RC4         ; output
-LO_LIMIT_P      EQU     PORTC
-LO_LIMIT		EQU     RC5         ; input ~ cutting current low limit
-MOTOR_MODE_P    EQU     PORTC
-MOTOR_MODE      EQU     RC6         ; output ~ motor step size selection
-SELECT_SW_P     EQU     PORTC
-SELECT_SW       EQU     RC7         ; input ~ select switch
+; Port C defines
+
+RC0             EQU 0           ; ICSPDAT ~ not used as I/O
+RC1             EQU 1           ; ICSPCLK ~ not used as I/O
+RBBT_INT        EQU 2           ; out to Rabbit Interrupt pin
+ENC1A           EQU 3           ; encoder 1, A input
+ENC1B           EQU 4           ; encoder 1, B input
+SYNCT           EQU 5           ; output to slaves for circumfential clock position
+ENC2A           EQU 6           ; encoder 2, A input
+ENC2B           EQU 7           ; encoder 2, B input
+
+SYNCT_WR        EQU LATC
+ENCODERS_RD     EQU PORTC
 
 ; I2C bus ID byte for writing to digital pot 1
 ; upper nibble = 1010 (bits 7-4)
@@ -590,13 +652,13 @@ setup:
 
     call    setupClock      ; set system clock source and frequency
 
-;    call    setupPortA      ; prepare Port A for I/O
+    call    setupPortA      ; prepare Port A for I/O
 
-;    call    setupPortB      ; prepare Port B for I/O
+    call    setupPortB      ; prepare Port B for I/O
 
-;    call    setupPortC      ; prepare Port C  for I/O
+    call    setupPortC      ; prepare Port C  for I/O
 
-;    call    initializeOutputs
+    call    initializeOutputs
 
     call    setupSerialPort
 
@@ -648,24 +710,6 @@ setup:
 
 initializeOutputs:
 
-    banksel LATB
-    bsf     LATB,SERIAL_OUT
-
-    banksel LATA
-    bcf     LATA, POWER_ON
-
-    banksel LATC
-    bsf     LATC, MOTOR_STEP
-
-    banksel LATC
-    bsf     LATC, MOTOR_DIR
-
-    banksel LATC              ; disable the motor
-    bsf     LATC, MOTOR_ENABLE
-
-    banksel LATC
-	bcf     LATC, MOTOR_MODE    ; choose full step if J8-1 (MS1) = Off and J8-2 (MS2) = On
-                                        ; see notes at top of page for more info
 
     return
 
@@ -716,31 +760,28 @@ setupClock:
 
 setupPortA:
 
-    banksel WPUA
-    movlw   b'00000000'                 ; disable weak pull-ups
-    movwf   WPUA
+    ; start with known safe configuration
 
-    banksel PORTA
-    clrf    PORTA                       ; init port value
+    banksel PORTA                       ; init port value
+    clrf    PORTA
 
-    banksel LATA                        ; init port data latch
+    banksel LATA                        ; init port data latch (same as writing to PORTA)
     clrf    LATA
 
-    banksel ANSELA
-    clrf    ANSELA                      ; setup port for all digital I/O
+    banksel WPUA                        ; disable all weak pullups
+    clrf    WPUA
 
-    ; set I/O directions
+    banksel ANSELA                      ; all pins digital I/O
+    clrf    ANSELA
 
-    banksel TRISA
-    movlw   b'11111111'                 ; first set all to inputs
+    banksel TRISA                       ; all pins digital inputs
+    movlw   b'11111111'                 
     movwf   TRISA
 
-    ; set direction for each pin used
+    ; customize I/O directions
+    ; some pins configured further by other functions for setup of serial port, I2C, ADC, etc.
 
-    bsf     TRISA, SERIAL_IN            ; input
-    bsf     TRISA, SHORT_DETECT         ; input
-    bsf     TRISA, HI_LIMIT             ; input
-    bcf     TRISA, POWER_ON             ; output
+    bsf     TRISA, SYNC_RESET           ; input
 
     return
 
@@ -760,29 +801,31 @@ setupPortA:
 
 setupPortB:
 
-    banksel WPUB
-    movlw   b'00000000'                 ; disable weak pull-ups
-    movwf   WPUB
+    ; start with known safe configuration
 
-    banksel PORTB
-    clrf    PORTB                       ; init port value
+    banksel PORTB                       ; init port value
+    clrf    PORTB
 
-    banksel LATB                        ; init port data latch
+    banksel LATB                        ; init port data latch (same as writing to PORTA)
     clrf    LATB
+
+    banksel WPUB                        ; disable all weak pullups
+    clrf    WPUB
+
+    banksel ANSELB                      ; all pins digital I/O
+    clrf    ANSELB
+
+    banksel TRISB                       ; all pins digital inputs
+    movlw   b'11111111'
+    movwf   TRISB
 
     bsf     LATB,SERIAL_OUT             ; initialize SERIAL_OUT high before changing pin to output
                                         ; so a start bit won't be transmitted
-    banksel ANSELB
-    clrf    ANSELB                      ; setup port for all digital I/O
 
-    ; set I/O directions
+    ; customize I/O directions
+    ; some pins configured further by other functions for setup of serial port, I2C, ADC, etc.
 
-    banksel TRISB
-    movlw   b'11111111'                 ; first set all to inputs
-    movwf   TRISB
-
-    bsf     TRISB, JOG_DWN_SW           ; input
-    bcf     TRISB, SERIAL_OUT           ; output
+    ; no configurations here
 
     return
 
@@ -800,31 +843,31 @@ setupPortB:
 
 setupPortC:
 
+    ; start with known safe configuration
     ; Port C does not have a weak pull-up register
 
-    banksel PORTC
-    clrf    PORTC                       ; init port value
+    banksel PORTC                       ; init port value
+    clrf    PORTC
 
-    banksel LATC                        ; init port data latch
+    banksel LATC                        ; init port data latch (same as writing to PORTA)
     clrf    LATC
 
-    banksel ANSELC
-    clrf    ANSELC                      ; setup port for all digital I/O
+    banksel ANSELC                      ; all pins digital I/O
+    clrf    ANSELC
 
-    ; set I/O directions
-
-    banksel TRISC
-    movlw   b'11111111'                 ; first set all to inputs
+    banksel TRISC                       ; all pins digital inputs
+    movlw   b'11111111'
     movwf   TRISC
 
-    bcf     TRISC, MOTOR_ENABLE         ; output
-    bsf     TRISC, MODE_SW              ; input
-    bsf     TRISC, JOG_UP_SW            ; input
-    bcf     TRISC, MOTOR_DIR            ; output
-    bcf     TRISC, MOTOR_STEP           ; output
-    bsf     TRISC, LO_LIMIT             ; input
-    bcf     TRISC, MOTOR_MODE           ; output
-    bsf     TRISC, SELECT_SW            ; input
+    ; customize I/O directions
+    ; some pins configured further by other functions for setup of serial port, I2C, ADC, etc.
+
+    bcf     TRISC, RBBT_INT             ; output to Rabbit Interrupt pin
+    bsf     TRISC, ENC1A                ; encoder 1, A input
+    bsf     TRISC, ENC1B                ; encoder 1, B input
+    bcf     TRISC, SYNCT                ; output to slaves for circumferential clock position
+    bsf     TRISC, ENC2A                ; encoder 2, A input
+    bsf     TRISC, ENC2B                ; encoder 2, B input
 
     return
 
@@ -1518,10 +1561,12 @@ sendI2CByte:
 ; Sets the MASTER SYNCHRONOUS SERIAL PORT (MSSP) MODULE to the I2C Master mode using the 7 bit
 ; address mode.
 ;
-; NOTE: RB4 and RB6 must have been configured elswhere as inputs for this mode.
-;
 
 setupI2CMaster7BitMode:
+
+    banksel TRISB
+    bsf TRISB, TRISB4       ; set RB4/I2CSDA to input
+    bsf TRISB, TRISB6       ; set RB6/I2CSCL to input
 
     movlw   0x27			; set baud rate at 100kHz for oscillator frequency of 16 Mhz
     banksel SSPADD
