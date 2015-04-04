@@ -24,7 +24,7 @@ CLEAN_SUBPROJECTS=${CLEAN_SUBPROJECTS_${SUBPROJECTS}}
 
 
 # Project Name
-PROJECTNAME=Multi-IO Board Transverse.X
+PROJECTNAME=Multi-IO_Board_Master.X
 
 # Active Configuration
 DEFAULTCONF=default
