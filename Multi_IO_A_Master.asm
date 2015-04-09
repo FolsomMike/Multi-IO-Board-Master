@@ -1,17 +1,71 @@
 ;--------------------------------------------------------------------------------------------------
-; Project:  Multi-IO Board A Transverse Master PIC
+; Project:  Multi-IO Board A Master PIC
 ; Date:     3/30/15
 ; Revision: See Revision History notes below.
 ;
 ; Overview:
 ;
-; This program runs on the Master PIC on a Multi-IO Board Configuration A Transverse Ring 1 or
-; Multi-IO Board Configuration A Transverse Ring 2. The transverse head is divided into two rings
-; of shoes. One board handles Ring 1 and other handles Ring 2. The Rabbit software is slightly
-; different for each ring, but all the Master & Slave PIC code is identical for either.
+; This program runs on the Master PIC on a Multi-IO Board Configuration A Board. It is designed to
+; operate for a Longitudinal 4 Channel (two shoes combined), Longitudinal Shoe 1, Longitudinal
+; Shoe 2, Transverse Ring 1, Transverse Ring 2, or Wall system.
+;
+; Longitudinal 4 Channel System
+;
+; This board handles four channels of longitudinal information. The 16 channels from the two
+; shoes are combined into four channels before reaching the Muli-IO board. This board monitors the
+; rotating head TDC sensor to create a clock position signal for the Slave PICs so that they can
+; tag each peak value with the circumferential location at which it was recorded.
+;
+; Longitudinal Shoe 1 / Longitudinal Shoe 2 System
+;
+; As an alternative to the Longitudinal 4 Channel System, some systems use a separate Multi-IO
+; board for each shoe of 8 channels each. The Shoe 1 board handles the TDC sensor as described
+; above for the Longitudinal 4 Channel System.
+;
+; Transverse Ring 1 / Transverse Ring 2 System
+;
+; The transverse head is divided into two rings of shoes. One board handles Ring 1 and other
+; handles Ring 2. The Rabbit software is slightl  different for each ring, but all the Master &
+; Slave PIC code is identical for either.
+;
+; Wall System
+;
+; A Multi-IO board is used to collect minimum (lowest voltage) peak data on input signals created
+; by a wall measurement system.
+;
+; Communications
 ;
 ; The Master PIC communicates with a Rabbit RCM4200 via serial port and with 8 Slave PICs via the
 ; I2C bus. It also communicates with digital gain and offset potentiometers via that same I2C bus.
+;
+; Digital Pots on I2C Bus
+;
+; Each Multi-IO board has four digital pot chips, each with four pots. Each of the eight channels
+; uses two of the pots from a chip, so adjacent channels share a chip. Due to an early design
+; miscalculation regarding the amount of I2C addressing space available, the circuit is designed so
+; that each pot chip can be selected or deselected by an output pin of a Slave PIC. This is done
+; by having A0 and A1 of each pot tied permanently to 0 while a PIC chip output controls A2, which
+; is normally held at 0 as well. These three address lines comprise the low three bits of the
+; chip's seven bit slave address. The upper four bits for this particular chip model is always
+; 1010b. Thus, in the normal state with the PIC select line set to 0, all chips will have address
+; 1010000b. When a chip is selected by taking the select line to 1, that chip will have an address
+; of 1010100b. The Master can then address the selected chip at that address and it will be the
+; only chip to respond. Of course, care must be taken not to select more than one chip at a time.
+;
+; deselected digital pot chip address: 1010000b
+; selected digital pot chip address:   1010100b
+;
+; Slave PIC on I2C Bus
+;
+; Unlike the digital pot chips, the Slave PICs have programmable upper address nibbles. On the
+; Multi-IO board, this is set to 1111 to differentiate it from the digital pot chips. The lower
+; three bits are set to match the values on three of the Slave PIC's input pins. For each slave,
+; these three bits are tied differently to give values of 0-7. The PIC with address input value of
+; 0 handles analog input channel 1, while the slave with address 7 handles channel 8.
+;
+; Slave PIC addressing: 1111000b, 1111001b,...,1111111b
+;
+; System Clock
 ;
 ; The system clock is configured to run at 16 MHz. The CLKOUT pin outputs a clock at Fosc/4 which
 ; drives the input clock of one of the Slave PICs. The Slave PIC uses the PLL to generate a 16 MHz
@@ -189,8 +243,9 @@
 
 ; Rabbit to Master PIC Commands -- sent by Rabbit to trigger actions
 
-RBT_GET_ALL_STATUS               EQU 0x00
-RBT_GET_SLAVE_PEAK_DATA          EQU 0x01
+RBT_NO_ACTION                    EQU 0x00
+RBT_GET_ALL_STATUS               EQU 0x01
+RBT_GET_SLAVE_PEAK_DATA          EQU 0x02
 ;RABBIT_RESET_ENCODERS           EQU 0x01
 ;RABBIT_GET_ENCODERS             EQU 0x02
 ;RABBIT_GET_PEAK_DATA            EQU 0x03
@@ -200,8 +255,13 @@ RBT_GET_SLAVE_PEAK_DATA          EQU 0x01
 
 ; Master PIC to Slave PIC Commands -- sent by Master to Slaves via I2C to trigger actions
 
-PIC_GET_ALL_STATUS              EQU 0x00
-PIC_START_CMD                   EQU 0x01
+PIC_NO_ACTION_CMD               EQU 0x00
+PIC_GET_ALL_STATUS_CMD          EQU 0x01
+PIC_START_CMD                   EQU 0x02
+PIC_GET_PEAK_PKT_CMD            EQU 0X03
+PIC_ENABLE_POT_CMD              EQU 0x04
+PIC_DISABLE_POT_CMD             EQU 0x05
+
 
 ; end of Defines
 ;--------------------------------------------------------------------------------------------------
@@ -315,27 +375,31 @@ ENC2B           EQU 7           ; encoder 2, B input
 SYNCT_WR        EQU LATC
 ENCODERS_RD     EQU PORTC
 
-; I2C bus ID byte for writing to digital pot 1
+; I2C bus ID byte for writing to the currently selected digital pot (see notes at top of page)
 ; upper nibble = 1010 (bits 7-4)
-; chip A2-A0 inputs = 001 (bits 3-1)
-; R/W bit set to 0 (bit 0)
+; chip A2-A0 inputs = 100 (bits 3-1)
+; address of the currently selected chip: b'1010100'
+; the lsb is R/W bit - set to 0 for write (bit 0)
 
-DIGITAL_POT1_WRITE_ID       EQU     b'10100010'
+DIG_POT_WR_CODE EQU     b'10101000'
+
+; address of each pot inside the chip
 
 POT1_ADDR           EQU     0x0
 POT2_ADDR           EQU     0x1
 POT3_ADDR           EQU     0x2
 POT4_ADDR           EQU     0x3
 
-; I2C bus ID bytes for writing and reading to the LED PIC
-; upper nibble = 1010 (bits 7-4)
-; chip A2-A0 inputs = 010 (bits 3-1)
-; R/W bit set to 0 (bit 0) for writing
-; R/W bit set to 1 (bit 0) for reading
+; I2C bus ID bytes for writing and reading to the Slave PICs (see notes at top of page)
+; upper nibble = 1111 (bits 7-4)
+; chip A2-A0 inputs = 000 - 111 (bits 3-1) (set these to choose the desired slave)
+; address of the slaves: b'1111xxx' where xxx is set to select slave 0-7
+; the lsb is R/W bit:
+;  R/W bit set to 0 (bit 0) for writing
+;  R/W bit set to 1 (bit 0) for reading
 
-SLAVE_PIC_WRITE_ID            EQU     b'10100100'
-SLAVE_PIC_READ_ID             EQU     b'10100101'
-
+SLAVE_PIC_WR_CODE   EQU     b'11110000'
+SLAVE_PIC_RD_CODE   EQU     b'11110001'
 
 ; end of Hardware Definitions
 ;--------------------------------------------------------------------------------------------------
@@ -356,6 +420,12 @@ SERIAL_PACKET_READY EQU     0x03
 
 SERIAL_RCV_BUF_LEN      EQU .20     ; these should always match with one preceded by a period
 SERIAL_RCV_BUF_LEN_RES  EQU 20      ; one is used in the variable definition, one used in code
+
+I2C_RCV_BUF_LEN      EQU .5     ; these should always match with one preceded by a period
+I2C_RCV_BUF_LEN_RES  EQU 5      ; one is used in the variable definition, one used in code
+
+I2C_XMT_BUF_LEN      EQU .20     ; these should always match with one preceded by a period
+I2C_XMT_BUF_LEN_RES  EQU 20      ; one is used in the variable definition, one used in code
 
 ; end of Software Definitions
 ;--------------------------------------------------------------------------------------------------
@@ -399,6 +469,15 @@ SERIAL_RCV_BUF_LEN_RES  EQU 20      ; one is used in the variable definition, on
     serialPortErrorCnt
 
     serialRcvBuf:SERIAL_RCV_BUF_LEN_RES
+
+    i2cXmtBufNumBytes
+    i2cXmtBufPtrH
+    i2cXmtBufPtrL
+    i2cXmtBuf:I2C_XMT_BUF_LEN_RES
+
+    i2cRcvBufPtrH
+    i2cRcvBufPtrL
+    i2cRcvBuf:I2C_RCV_BUF_LEN_RES
 
     hiCurrentLimitPot       ; value for digital pot which sets the high current limit value
     loCurrentLimitPot       ; value for digital pot which sets the high current limit value
@@ -512,9 +591,11 @@ mainLoop:
 
 ;debug mks
 
+ ;   call    handleAllStatusRbtCmd
+
  ;   call    handleSerialPacket
 
-;    call    handleSerialPortReceiveInt      ;debug mks -- remove this
+;    call    handleSerialPortReceiveInt
 
 ;    banksel flags2
 ;    goto    rsl2    ;debug mks -- remove this
@@ -606,11 +687,22 @@ parseCommandFromSerialPacket:
 
 handleAllStatusRbtCmd:
 
-    banksel flags2
+    banksel scratch0
 
-    movlw   0xac
+    movlw   0x00                    ; debug mks -- need to scan through all Slaves
+    movwf   scratch0
+
+    ;movlw   PIC_GET_ALL_STATUS_CMD ; debug mks
+    movlw   PIC_ENABLE_POT_CMD  ; debug mks
+    movwf   scratch1
+
+    call    sendCommandToSlavePIC
+
+    ;debug mks
+    movlw   0x69
     banksel TXREG
     movwf   TXREG
+    ;debug mks end
 
     goto    resetSerialPortReceiveBuffer
 
@@ -719,8 +811,6 @@ initializeOutputs:
 ;--------------------------------------------------------------------------------------------------
 ; setupClock
 ;
-; Saves the flags value to eeprom.
-;
 ; Sets up the system clock source and frequency.
 ;
 ; Assumes clock related configuration bits are set as follows:
@@ -728,6 +818,8 @@ initializeOutputs:
 ;   _FOSC_INTOSC,  _CPUDIV_NOCLKDIV, _PLLMULT_4x, _PLLEN_DISABLED
 ;
 ; Assumes all programmable clock related options are at Reset default values.
+;
+; NOTE: Adjust I2C baud rate generator value when Fosc is changed.
 ;
 
 setupClock:
@@ -968,19 +1060,32 @@ RSPRBnoOERRError:
 ;--------------------------------------------------------------------------------------------------
 ; sendCommandToSlavePIC
 ;
-; Sends a command and/or data to a Slave PIC via the I2C bus.
+; Sends a command byte to a Slave PIC via the I2C bus.
+;
+; scratch0 should contain the slave's ID number (3 lsb's of the slave's IC2 address)
+; scratch1 should contain the command byte.
 ;
 
 sendCommandToSlavePIC:
 
-    banksel scratch0
+    banksel scratch1                    ; copy the command to the first byte in xmt buffer
+    movf    scratch1, W
+    banksel i2cXmtBufNumBytes
+    movwf   i2cXmtBuf
 
-    movlw   .3                      ; send command byte and two values
-    movwf   scratch0
-    ; debug mks load command here -- movlw   LEDPIC_SET_LEDS         ; put command byte in scratch1
-    movwf   scratch1
-    movlw   scratch1                ; point to first byte to be sent
+    movlw   .1                          ; send one byte - the command byte
+    movwf   i2cXmtBufNumBytes
+
+    clrf    FSR0H                        ; point FSR0 at start of xmt buffer
+    movlw   i2cXmtBuf
     movwf   FSR0L
+
+    clrf    FSR1H                        ; point FSR1 at number of bytes to transmit variable
+    movlw   i2cXmtBufNumBytes
+    movwf   FSR1L
+
+    banksel scratch0
+    movf    scratch0, W
 
     call    sendBytesToSlavePICViaI2C
 
@@ -1003,7 +1108,7 @@ setDigitalPots:
     movwf   scratch0
     ;debug mks -- movlw   VOLTAGE_MONITOR_POT
     movwf   scratch1
-    call    setDigitalPotInChip1
+    call    setDigitalPotInChip
 
     return
 
@@ -1192,7 +1297,7 @@ rsl3:
     clrf    FSR0H                           ; load FSR0 with buffer pointer
     movf    serialRcvBufPtr, W
     movwf   FSR0L
-    incf    serialRcvBufPtr, F              ; advance the buffer pointer
+    incf    serialRcvBufPtr, F              ; advance the buffer pointer (FSR0L not affected)
 
     movf    serialIntScratch0, W            ; retrieve the new character
     movwf   INDF0                           ; store in buffer
@@ -1230,7 +1335,7 @@ noOERRError:
 ;--------------------------------------------------------------------------------------------------
 ; handleSerialPortTransmitInt
 ;
-; This function is called when a byte has been received by the serial port.
+; This function is called when a byte is to be transmitted to the host via serial port.
 ;
 ; NOTE NOTE NOTE
 ; It is important to use no (or very few) subroutine calls.  The stack is only 16 deep and
@@ -1346,19 +1451,22 @@ LoopSD1:
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
-; setDigitalPotInChip1
+; setDigitalPotInChip
 ;
-; Sets the pot specified by scratch0 in digital pot chip 1 to the value in scratch1.
+; Sets to the value in scratch1 the pot specified by scratch0 in whichever digital pot chip is
+; currently enabled.
+;
+; The desired chip is enabled by sending the PIC_ENABLE_POT_CMD to the PIC connected to that chip.
 ;
 
-setDigitalPotInChip1:
+setDigitalPotInChip:
 
     call    clearSSP1IF             ; make sure flag is cleared before starting
 
     call    generateI2CStart
 
-    movlw   DIGITAL_POT1_WRITE_ID   ; send proper ID to write to digital pot chip 1
-    call    sendI2CByte             ; send byte in W register on I2C bus after SP1IF goes high
+    movlw   DIG_POT_WR_CODE         ; send proper ID code to write to digital pot chip 1
+    call    sendI2CByte             ; send code on I2C bus after SP1IF goes high
 
     banksel scratch0                ; send the address of the pot in the chip to access
     movf    scratch0,W
@@ -1374,18 +1482,19 @@ setDigitalPotInChip1:
 
     call    waitForSSP1IFHighThenClearIt    ; wait for high flag upon stop condition finished
 
-    return
+    goto    cleanUpI2CAndReturn             ; reset all status and error flags
 
-; end of setDigitalPotInChip1
+; end of setDigitalPotInChip
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
 ; sendBytesToSlavePICViaI2C
 ;
-; Sends byte to a Slave PIC via the I2C bus.
+; Sends bytes to a Slave PIC via the I2C bus.
 ;
-; The number of bytes to be written should be in scratch0.
-; Indirect register FSR0 should point to first byte in RAM to be written.
+; WREG should contain the slave's ID number (3 lsb's of the slave's IC2 address)
+; FSR0 should point to start of buffer.
+; FSR1 should point to variable containing number of bytes to be transmitted. (must be > 0)
 ;
 
 sendBytesToSlavePICViaI2C:
@@ -1394,7 +1503,9 @@ sendBytesToSlavePICViaI2C:
 
     call    generateI2CStart
 
-    movlw   SLAVE_PIC_WRITE_ID      ; send proper ID to write to LED PIC
+    lslf    WREG, W                 ; shift the address lsb bits up to merge with the write code
+    iorlw   SLAVE_PIC_WR_CODE       ; merge slave address lsbs with upper nibble and rd/wr flag
+
     call    sendI2CByte             ; send byte in W register on I2C bus after SSP1IF goes high
 
 loopSBLP1:
@@ -1402,15 +1513,16 @@ loopSBLP1:
     moviw   FSR0++                  ; load next byte to be sent
     call    sendI2CByte
 
-    banksel scratch0
-	decfsz	scratch0,F              ; count down number of bytes transferred
-	goto	loopSBLP1               ; not zero yet - trasfer more bytes
+	decfsz	INDF1, F                ; count down number of bytes transferred
+	goto	loopSBLP1               ; not zero yet - transfer more bytes
 
     call    waitForSSP1IFHighThenClearIt    ; wait for high flag upon transmission completion
 
     call    generateI2CStop
 
     call    waitForSSP1IFHighThenClearIt    ; wait for high flag upon stop condition finished
+
+    call    cleanUpI2CAndReturn             ; reset all status and error flags
 
     return
 
@@ -1425,8 +1537,8 @@ loopSBLP1:
 
 generateI2CStart:
 
-    banksel SSPCON2
-    bsf     SSPCON2,SEN
+    banksel SSP1CON2
+    bsf     SSP1CON2,SEN
 
     return
 
@@ -1441,8 +1553,8 @@ generateI2CStart:
 
 generateI2CRestart:
 
-    banksel SSPCON2
-    bsf     SSPCON2,RSEN
+    banksel SSP1CON2
+    bsf     SSP1CON2,RSEN
 
     return
 
@@ -1457,8 +1569,8 @@ generateI2CRestart:
 
 generateI2CStop:
 
-    banksel SSPCON2
-    bsf     SSPCON2,PEN
+    banksel SSP1CON2
+    bsf     SSP1CON2,PEN
 
     return
 
@@ -1479,6 +1591,78 @@ clearSSP1IF:
     return
 
 ; end of clearSSP1IF
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; cleanUpI2CAndReturn
+;
+; Clears all I2C status and error flags to ensure the bus is ready for further use.
+;
+
+cleanUpI2CAndReturn:
+
+    call    clearSSP1IF         ; clear the I2C interrupt flag
+    call    setCKP              ; release the I2C clock line so master can send next byte
+    call    clearSSP1OV         ; clears the overflow bit to allow new data to be read
+    call    clearWCOL           ; clears the write collision bit to allow new data to be written
+
+    return
+
+; end of cleanUpI2CAndReturn
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; setCKP
+;
+; Sets the CKP bit in register SSP1CON1 to 1.
+;
+; This will release the I2C bus clock so the master can transmit the next byte.
+;
+
+setCKP:
+
+    banksel SSP1CON1
+    bsf     SSP1CON1, CKP
+
+    return
+
+; end of setCKP
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; clearSSP1OV
+;
+; Clears the MSSP overflow bit to allow new bytes to be read.
+;
+; The bit is set if a byte was received before the previous byte was read from the buffer.
+;
+
+clearSSP1OV:
+
+    banksel SSP1CON1
+    bcf     SSP1CON1,SSPOV
+
+    return
+
+; end of clearSSP1OV
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; clearWCOL
+;
+; Clears the MSSP write collision bit to allow new bytes to be written
+;
+; The bit is set if a byte was placed in SSP1BUF at an improper time.
+;
+
+clearWCOL:
+
+    banksel SSP1CON1
+    bcf     SSP1CON1, WCOL
+
+    return
+
+; end of clearWCOL
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
@@ -1543,8 +1727,8 @@ sendI2CByte:
 
     ; put byte in transmit buffer
 
-    banksel SSPBUF
-    movwf   SSPBUF
+    banksel SSP1BUF
+    movwf   SSP1BUF
 
     ; clear interrupt flag
 
@@ -1568,17 +1752,20 @@ setupI2CMaster7BitMode:
     bsf TRISB, TRISB4       ; set RB4/I2CSDA to input
     bsf TRISB, TRISB6       ; set RB6/I2CSCL to input
 
-    movlw   0x27			; set baud rate at 100kHz for oscillator frequency of 16 Mhz
-    banksel SSPADD
-    movwf   SSPADD
+    ; set baud rate
+    ; for Fosc at 16 Mhz, use 0x27 ~ for Fosc at 32 Mhz, use 0x4f
 
-    banksel SSPCON1
-    bcf	SSPCON1,SSP1M0		; SSPM = b1000 ~ I2C Master mode, clock = FOSC / (4 * (SSPADD+1))(4)
-    bcf	SSPCON1,SSP1M1
-    bcf	SSPCON1,SSP1M2
-    bsf	SSPCON1,SSP1M3
+    movlw   0x27			; set baud rate at 100kHz
+    banksel SSP1ADD
+    movwf   SSP1ADD
 
-    bsf	SSPCON1,SSPEN		;enables the MSSP module
+    banksel SSP1CON1
+    bcf	SSP1CON1,SSP1M0		; SSPM = b1000 ~ I2C Master mode, clock = FOSC / (4 * (SSPADD+1))(4)
+    bcf	SSP1CON1,SSP1M1
+    bcf	SSP1CON1,SSP1M2
+    bsf	SSP1CON1,SSP1M3
+
+    bsf	SSP1CON1,SSPEN		;enables the MSSP module
 
     return
 
