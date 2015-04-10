@@ -702,7 +702,7 @@ handleAllStatusRbtCmd:
     banksel scratch0
     movlw   0x00                        ; Slave PIC address
     movwf   scratch0
-    movlw   .3                          ; number of bytes expected in return packet
+    movlw   .5                          ; number of bytes expected in return packet
     movwf   scratch1
     movlw   PIC_GET_ALL_STATUS_CMD      ; command
 
@@ -710,12 +710,12 @@ handleAllStatusRbtCmd:
 
     ;debug mks
     banksel i2cRcvBuf
-    movf    i2cRcvBuf, W
+    movf    i2cRcvBuf+3, W
     banksel TXREG
     movwf   TXREG
 
     banksel i2cRcvBuf
-    movf    i2cRcvBuf+1, W
+    movf    i2cRcvBuf+4, W
     banksel TXREG
     movwf   TXREG
 
