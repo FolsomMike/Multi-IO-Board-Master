@@ -58,12 +58,14 @@
 ; Slave PIC on I2C Bus
 ;
 ; Unlike the digital pot chips, the Slave PICs have programmable upper address nibbles. On the
-; Multi-IO board, this is set to 1111 to differentiate it from the digital pot chips. The lower
+; Multi-IO board, this is set to 1110 to differentiate it from the digital pot chips. The lower
 ; three bits are set to match the values on three of the Slave PIC's input pins. For each slave,
 ; these three bits are tied differently to give values of 0-7. The PIC with address input value of
 ; 0 handles analog input channel 1, while the slave with address 7 handles channel 8.
 ;
-; Slave PIC addressing: 1111000b, 1111001b,...,1111111b
+; note that 1111b upper nibble has special meaning in 10 bit address mode, so it is avoided here
+;
+; Slave PIC addressing: 1110000b, 1110001b,...,1110111b
 ;
 ; System Clock
 ;
@@ -233,12 +235,12 @@
 ; Defines
 ;
 
-; COMMENT OUT "#define debug" line before using code in system.
-; Defining debug will insert code which simplifies simulation by skipping code which waits on
+; COMMENT OUT "#define debug_on" line before using code in system.
+; Defining debug_on will insert code which simplifies simulation by skipping code which waits on
 ; stimulus and performing various other actions which make the simulation run properly.
-; Search for "ifdef debug" to find all examples of such code.
+; Search for "ifdef debug_on" to find all examples of such code.
 
-;#define debug 1     ; set debug testing "on"
+;#define debug_on 1     ; set debug testing "on"
 
 
 ; Rabbit to Master PIC Commands -- sent by Rabbit to trigger actions
@@ -391,15 +393,15 @@ POT3_ADDR           EQU     0x2
 POT4_ADDR           EQU     0x3
 
 ; I2C bus ID bytes for writing and reading to the Slave PICs (see notes at top of page)
-; upper nibble = 1111 (bits 7-4)
+; upper nibble = 1110 (bits 7-4)
 ; chip A2-A0 inputs = 000 - 111 (bits 3-1) (set these to choose the desired slave)
-; address of the slaves: b'1111xxx' where xxx is set to select slave 0-7
+; address of the slaves: b'1110xxx' where xxx is set to select slave 0-7
 ; the lsb is R/W bit:
 ;  R/W bit set to 0 (bit 0) for writing
 ;  R/W bit set to 1 (bit 0) for reading
 
-SLAVE_PIC_WR_CODE   EQU     b'11110000'
-SLAVE_PIC_RD_CODE   EQU     b'11110001'
+SLAVE_PIC_WR_CODE   EQU     b'11100000'
+SLAVE_PIC_RD_CODE   EQU     b'11100001'
 
 ; end of Hardware Definitions
 ;--------------------------------------------------------------------------------------------------
@@ -421,11 +423,11 @@ SERIAL_PACKET_READY EQU     0x03
 SERIAL_RCV_BUF_LEN      EQU .20     ; these should always match with one preceded by a period
 SERIAL_RCV_BUF_LEN_RES  EQU 20      ; one is used in the variable definition, one used in code
 
-I2C_RCV_BUF_LEN      EQU .5     ; these should always match with one preceded by a period
-I2C_RCV_BUF_LEN_RES  EQU 5      ; one is used in the variable definition, one used in code
+I2C_RCV_BUF_LEN      EQU .30     ; these should always match with one preceded by a period
+I2C_RCV_BUF_LEN_RES  EQU 30      ; one is used in the variable definition, one used in code
 
-I2C_XMT_BUF_LEN      EQU .20     ; these should always match with one preceded by a period
-I2C_XMT_BUF_LEN_RES  EQU 20      ; one is used in the variable definition, one used in code
+I2C_XMT_BUF_LEN      EQU .30     ; these should always match with one preceded by a period
+I2C_XMT_BUF_LEN_RES  EQU 30      ; one is used in the variable definition, one used in code
 
 ; end of Software Definitions
 ;--------------------------------------------------------------------------------------------------
@@ -470,15 +472,6 @@ I2C_XMT_BUF_LEN_RES  EQU 20      ; one is used in the variable definition, one u
 
     serialRcvBuf:SERIAL_RCV_BUF_LEN_RES
 
-    i2cXmtBufNumBytes
-    i2cXmtBufPtrH
-    i2cXmtBufPtrL
-    i2cXmtBuf:I2C_XMT_BUF_LEN_RES
-
-    i2cRcvBufPtrH
-    i2cRcvBufPtrL
-    i2cRcvBuf:I2C_RCV_BUF_LEN_RES
-
     hiCurrentLimitPot       ; value for digital pot which sets the high current limit value
     loCurrentLimitPot       ; value for digital pot which sets the high current limit value
     powerLevel              ; store the power level of the high/low current values in use
@@ -508,11 +501,24 @@ I2C_XMT_BUF_LEN_RES  EQU 20      ; one is used in the variable definition, one u
 
  cblock 0xa0                ; starting address
 
-    Flags2                  ; bit 0: 0 = LCD buffer not busy, 1 = buffer busy
-                            ; bit 1: 0 = start bit not due, 1 = transmit start bit next
-                            ; bit 2: 0 = stop bit not due,  1 = transmit stop bit next
-                            ; bit 3: 0 = not buffer end,  1 = buffer end reached
-                            ; bit 4: 0 = not delaying, 1 = delaying
+    Flags2                  ; bit 0: 0 = 
+                            ; bit 1: 0 = 
+                            ; bit 2: 0 = 
+                            ; bit 3: 0 = 
+                            ; bit 4: 0 = 
+                            ; bit 5: 0 =
+                            ; bit 6: 0 =
+                            ; bit 7: 0 =
+
+    i2cXmtBufNumBytes
+    i2cXmtBufPtrH
+    i2cXmtBufPtrL
+    i2cXmtBuf:I2C_XMT_BUF_LEN_RES
+
+    i2cRcvBufNumBytes
+    i2cRcvBufPtrH
+    i2cRcvBufPtrL
+    i2cRcvBuf:I2C_RCV_BUF_LEN_RES
 
  endc
 
@@ -584,6 +590,10 @@ I2C_XMT_BUF_LEN_RES  EQU 20      ; one is used in the variable definition, one u
 ;
 
 start:
+
+    ifdef debug_on
+    messg "WARNING -- DEBUG MODE ENABLED"
+    endif
 
     call    setup           ; preset variables and configure hardware
 
@@ -687,21 +697,33 @@ parseCommandFromSerialPacket:
 
 handleAllStatusRbtCmd:
 
+; debug mks -- need to scan through all Slaves
+
     banksel scratch0
-
-    movlw   0x00                    ; debug mks -- need to scan through all Slaves
+    movlw   0x00                        ; Slave PIC address
     movwf   scratch0
-
-    ;movlw   PIC_GET_ALL_STATUS_CMD ; debug mks
-    movlw   PIC_ENABLE_POT_CMD  ; debug mks
+    movlw   .3                          ; number of bytes expected in return packet
     movwf   scratch1
+    movlw   PIC_GET_ALL_STATUS_CMD      ; command
 
-    call    sendCommandToSlavePIC
+    call    requestAndReceivePktFromSlavePIC
 
     ;debug mks
-    movlw   0x69
+    banksel i2cRcvBuf
+    movf    i2cRcvBuf, W
     banksel TXREG
     movwf   TXREG
+
+    banksel i2cRcvBuf
+    movf    i2cRcvBuf+1, W
+    banksel TXREG
+    movwf   TXREG
+
+    banksel i2cRcvBuf
+    movf    i2cRcvBuf+2, W
+    banksel TXREG
+;    movwf   TXREG
+
     ;debug mks end
 
     goto    resetSerialPortReceiveBuffer
@@ -1058,33 +1080,68 @@ RSPRBnoOERRError:
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
+; requestAndReceivePacketFromSlavePIC
+;
+; Sends a data request command to a Slave PIC via the I2C bus and then receives the return data.
+;
+; WREG should contain the packet request command
+; scratch0 should contain the Slave PIC's I2C address
+; scratch1 should contain the number of bytes expected in the data packet from the Slave
+;
+; Data packet returned by the Slave PIC is stored in i2cRcvBuf
+;
+
+requestAndReceivePktFromSlavePIC:
+
+    ; send the request command first using an I2C transmit operation
+    ; scratch0 = Slave PIC I2C address
+    ; WREG = packet request command
+
+    call    sendCommandToSlavePIC
+
+    ; read bytes from slave using an I2C receive operation
+    ; slave knows what data to send based on command sent in last transmission
+    ; PIC address in scratch0 left unchanged
+    ; number of bytes expected in packet loaded into WREG
+
+    banksel scratch1
+    movf    scratch1, W
+
+    call    readBytesFromSlavePIC
+
+    return
+
+; end of requestAndReceivePacketFromSlavePIC
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
 ; sendCommandToSlavePIC
 ;
 ; Sends a command byte to a Slave PIC via the I2C bus.
 ;
+; WREG should contain the command byte
 ; scratch0 should contain the slave's ID number (3 lsb's of the slave's IC2 address)
-; scratch1 should contain the command byte.
 ;
 
 sendCommandToSlavePIC:
 
-    banksel scratch1                    ; copy the command to the first byte in xmt buffer
-    movf    scratch1, W
-    banksel i2cXmtBufNumBytes
+    banksel i2cXmtBufNumBytes           ; store the command in the first byte in xmt buffer
     movwf   i2cXmtBuf
 
     movlw   .1                          ; send one byte - the command byte
     movwf   i2cXmtBufNumBytes
 
-    clrf    FSR0H                        ; point FSR0 at start of xmt buffer
+    movlw   high i2cXmtBuf              ; point FSR0 at start of xmt buffer
+    movwf   FSR0H
     movlw   i2cXmtBuf
     movwf   FSR0L
 
-    clrf    FSR1H                        ; point FSR1 at number of bytes to transmit variable
+    movlw   high i2cXmtBufNumBytes      ; point FSR1 at numBytes variable
+    movwf   FSR1H
     movlw   i2cXmtBufNumBytes
     movwf   FSR1L
 
-    banksel scratch0
+    banksel scratch0                    ; get Slave PIC I2C addr
     movf    scratch0, W
 
     call    sendBytesToSlavePICViaI2C
@@ -1092,6 +1149,40 @@ sendCommandToSlavePIC:
     return
 
 ; end of sendCommandToSlavePIC
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; readBytesFromSlavePIC
+;
+; Reads bytes from a Slave PIC via the I2C bus.
+;
+; WREG should contain the number of bytes to read
+; scratch0 should contain the slave's ID number (3 lsb's of the slave's IC2 address)
+;
+
+readBytesFromSlavePIC:
+
+    banksel i2cRcvBufNumBytes           ; store the number of bytes to read
+    movwf   i2cRcvBufNumBytes
+
+    movlw   high i2cRcvBuf              ; point FSR0 at start of rcv buffer
+    movwf   FSR0H
+    movlw   i2cRcvBuf
+    movwf   FSR0L
+
+    movlw   high i2cRcvBufNumBytes      ; point FSR1 at number of bytes to transmit variable
+    movwf   FSR1H
+    movlw   i2cRcvBufNumBytes
+    movwf   FSR1L
+
+    banksel scratch0
+    movf    scratch0, W
+
+    call    readBytesViaI2C
+
+    return
+
+; end of readBytesFromSlavePIC
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
@@ -1493,7 +1584,7 @@ setDigitalPotInChip:
 ; Sends bytes to a Slave PIC via the I2C bus.
 ;
 ; WREG should contain the slave's ID number (3 lsb's of the slave's IC2 address)
-; FSR0 should point to start of buffer.
+; FSR0 should point to start of transmit buffer.
 ; FSR1 should point to variable containing number of bytes to be transmitted. (must be > 0)
 ;
 
@@ -1506,7 +1597,7 @@ sendBytesToSlavePICViaI2C:
     lslf    WREG, W                 ; shift the address lsb bits up to merge with the write code
     iorlw   SLAVE_PIC_WR_CODE       ; merge slave address lsbs with upper nibble and rd/wr flag
 
-    call    sendI2CByte             ; send byte in W register on I2C bus after SSP1IF goes high
+    call    sendI2CByte             ; send addr byte in W register on I2C bus after SSP1IF goes high
 
 loopSBLP1:
 
@@ -1527,6 +1618,74 @@ loopSBLP1:
     return
 
 ; end of sendBytesToSlavePICViaI2C
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; readBytesViaI2C
+;
+; Reads bytes from the I2C bus.
+;
+; WREG should contain the slave's ID number (3 lsb's of the slave's IC2 address)
+; FSR0 should point to start of receive buffer.
+; FSR1 should point to variable containing number of bytes to be received. (must be > 0)
+;
+
+readBytesViaI2C:
+
+    call    clearSSP1IF             ; make sure flag is cleared before starting
+
+    call    generateI2CStart
+
+    lslf    WREG, W                 ; shift the address lsb bits up to merge with the read code
+    iorlw   SLAVE_PIC_RD_CODE       ; merge slave address lsbs with upper nibble and rd/wr flag
+
+    call    sendI2CByte             ; send addr byte in W register on I2C bus after SSP1IF goes high
+
+loopRBLP1:
+
+    call    waitForSSP1IFHighThenClearIt    ; wait for high flag upon transmission completion
+
+    banksel SSP1CON2                ; start clocking in byte from slave
+    bsf     SSP1CON2,RCEN
+
+    call    waitForSSP1IFHighThenClearIt    ; wait for high flag upon transmission completion
+
+    banksel SSP1BUF                 ; store the received byte in the buffer
+    movf    SSP1BUF, W
+    movwi   FSR0++
+
+	decfsz	INDF1, F                ; count down number of bytes transferred
+	goto	sendMore                ; not zero yet - transfer more bytes
+
+    goto	allSent
+
+sendMore:
+
+    banksel SSP1CON2                ; send ACK to continue reading
+    bcf     SSP1CON2,ACKDT          ; set low bit (ACK)
+    bsf     SSP1CON2,ACKEN          ; enable NACK transmission
+    goto	loopRBLP1
+
+allSent:
+
+    banksel SSP1CON2                ; send NACK to terminate read
+    bsf     SSP1CON2,ACKDT          ; set high bit (NACK)
+    bsf     SSP1CON2,ACKEN          ; enable NACK transmission
+
+    call    waitForSSP1IFHighThenClearIt    ; wait for high flag upon stop condition finished
+
+    banksel SSP1CON2
+    bcf     SSP1CON2,ACKDT          ; reset to low to send ACKs in future
+
+    call    generateI2CStop
+
+    call    waitForSSP1IFHighThenClearIt    ; wait for high flag upon stop condition finished
+
+    call    cleanUpI2CAndReturn             ; reset all status and error flags
+
+    return
+
+; end of readBytesViaI2C
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
@@ -1673,7 +1832,7 @@ clearWCOL:
 
 waitForSSP1IFHigh:
 
-    ifdef debug       ; if debugging, don't wait for interrupt to be set high as the MSSP is not
+    ifdef debug_on    ; if debugging, don't wait for interrupt to be set high as the MSSP is not
     return            ; simulated by the IDE
     endif
 
