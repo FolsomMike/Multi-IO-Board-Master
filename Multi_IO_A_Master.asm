@@ -423,11 +423,17 @@ SERIAL_PACKET_READY EQU     0x03
 SERIAL_RCV_BUF_LEN      EQU .20     ; these should always match with one preceded by a period
 SERIAL_RCV_BUF_LEN_RES  EQU 20      ; one is used in the variable definition, one used in code
 
-I2C_RCV_BUF_LEN      EQU .30     ; these should always match with one preceded by a period
-I2C_RCV_BUF_LEN_RES  EQU 30      ; one is used in the variable definition, one used in code
+SERIAL_XMT_BUF_LEN      EQU .161    ; these should always match with one preceded by a period
+SERIAL_XMT_BUF_LEN_RES  EQU 161     ; one is used in the variable definition, one used in code
+                                    ; NOTE: This buffer is larger than the 80 block bytes of RAM
+                                    ; in each block, so it is generally accessed using an Indirect
+                                    ; Register in the Linear Addressing space.
 
-I2C_XMT_BUF_LEN      EQU .30     ; these should always match with one preceded by a period
-I2C_XMT_BUF_LEN_RES  EQU 30      ; one is used in the variable definition, one used in code
+I2C_RCV_BUF_LEN      EQU .31     ; these should always match with one preceded by a period
+I2C_RCV_BUF_LEN_RES  EQU 31      ; one is used in the variable definition, one used in code
+
+I2C_XMT_BUF_LEN      EQU .31     ; these should always match with one preceded by a period
+I2C_XMT_BUF_LEN_RES  EQU 31      ; one is used in the variable definition, one used in code
 
 ; end of Software Definitions
 ;--------------------------------------------------------------------------------------------------
@@ -466,7 +472,8 @@ I2C_XMT_BUF_LEN_RES  EQU 30      ; one is used in the variable definition, one u
     serialIntScratch0
     serialRcvPktLen
     serialRcvPktCnt
-    serialRcvBufPtr
+    serialRcvBufPtrH
+    serialRcvBufPtrL
     serialRcvBufLen
     serialPortErrorCnt
 
@@ -749,30 +756,6 @@ handleAllStatusRbtCmd:
     goto    resetSerialPortReceiveBuffer
 
 ; end of handleAllStatusRbtCmd
-;--------------------------------------------------------------------------------------------------
-
-;--------------------------------------------------------------------------------------------------
-; waitForTXIFHigh
-;
-; Waits in a loop for TXIF bit in register PIR1 to go high. This signals that the EUSART serial
-; port transmit buffer is empty and a new byte can be sent.
-;
-
-waitForTXIFHigh:
-
-    ifdef debug_on    ; if debugging, don't wait for interrupt to be set high as the MSSP is not
-    return            ; simulated by the IDE
-    endif
-
-    banksel PIR1
-
-wfth1:
-    btfss   PIR1, TXIF
-    goto    wfth1
-
-    return
-
-; end of waitForTXIFHigh
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
@@ -1090,6 +1073,30 @@ setupSerialPort:
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
+; waitForTXIFHigh
+;
+; Waits in a loop for TXIF bit in register PIR1 to go high. This signals that the EUSART serial
+; port transmit buffer is empty and a new byte can be sent.
+;
+
+waitForTXIFHigh:
+
+    ifdef debug_on    ; if debugging, don't wait for interrupt to be set high as the MSSP is not
+    return            ; simulated by the IDE
+    endif
+
+    banksel PIR1
+
+wfth1:
+    btfss   PIR1, TXIF
+    goto    wfth1
+
+    return
+
+; end of waitForTXIFHigh
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
 ; resetSerialPortReceiveBuffer
 ;
 ; Resets all flags and variables associated with the serial port receive buffer.
@@ -1106,8 +1113,10 @@ resetSerialPortReceiveBuffer:
 
     clrf    serialRcvPktLen
     clrf    serialRcvPktCnt
+    movlw   high serialRcvBuf
+    movwf   serialRcvBufPtrH
     movlw   serialRcvBuf
-    movwf   serialRcvBufPtr
+    movwf   serialRcvBufPtrL
 
     banksel RCSTA           ; check for overrun error - must be cleared to receive more data
     btfss   RCSTA, OERR
@@ -1429,13 +1438,19 @@ rslError:
 rsl3:
 
     movwf   serialIntScratch0               ; store the new character
-    clrf    FSR0H                           ; load FSR0 with buffer pointer
-    movf    serialRcvBufPtr, W
+
+    movf    serialRcvBufPtrH, W             ; load FSR0 with buffer pointer
+    movwf   FSR0H
+    movf    serialRcvBufPtrL, W
     movwf   FSR0L
-    incf    serialRcvBufPtr, F              ; advance the buffer pointer (FSR0L not affected)
 
     movf    serialIntScratch0, W            ; retrieve the new character
-    movwf   INDF0                           ; store in buffer
+    movwi   INDF0++                         ; store in buffer
+
+    movf    FSR0H, W                        ; save adjusted pointer
+    movwf   serialRcvBufPtrH
+    movf    FSR0L, W
+    movwf   serialRcvBufPtrL
 
     decfsz  serialRcvPktCnt, F              ; count down number of bytes stored
     goto    rsllp                           ; continue collecting until counter reaches 0
@@ -1470,7 +1485,13 @@ noOERRError:
 ;--------------------------------------------------------------------------------------------------
 ; handleSerialPortTransmitInt
 ;
-; This function is called when a byte is to be transmitted to the host via serial port.
+; This function is called when a byte is to be transmitted to the host via serial port. After
+; data is placed in the transmit buffer, the TXIE flag is enabled so this routine gets called
+; as an interrupt whenever the transmit buffer is empty. After all bytes in the buffer have been
+; transmitted, this routine clears the TXIE flag to disable further interrupts.
+;
+; Before the TXIE flag is set to start the process, serialXmtBufNumBytes should be set to value
+; > 0, i.e. the number of valid bytes in the transmit buffer.
 ;
 ; NOTE NOTE NOTE
 ; It is important to use no (or very few) subroutine calls.  The stack is only 16 deep and
@@ -1480,6 +1501,12 @@ noOERRError:
 ;
 
 handleSerialPortTransmitInt:
+
+;    i2cXmtBufNumBytes
+;    i2cXmtBufPtrH
+;    i2cXmtBufPtrL
+;    i2cXmtBuf:I2C_XMT_BUF_LEN_RES
+
 
 
     goto    endISR
