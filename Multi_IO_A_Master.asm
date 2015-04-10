@@ -508,7 +508,7 @@ I2C_XMT_BUF_LEN_RES  EQU 31      ; one is used in the variable definition, one u
 
  cblock 0xa0                ; starting address
 
-    Flags2                  ; bit 0: 0 = 
+    flagsA0                 ; bit 0: 0 =
                             ; bit 1: 0 = 
                             ; bit 2: 0 = 
                             ; bit 3: 0 = 
@@ -790,6 +790,10 @@ handleGetSlavePeakDataRbtCmd:
 ;
 
 setup:
+
+    banksel flags
+    clrf    flags
+    clrf    flags2
 
     call    setupClock      ; set system clock source and frequency
 
