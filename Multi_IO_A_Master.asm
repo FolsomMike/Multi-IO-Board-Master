@@ -710,25 +710,69 @@ handleAllStatusRbtCmd:
 
     ;debug mks
     banksel i2cRcvBuf
+    movf    i2cRcvBuf, W
+    banksel TXREG
+    movwf   TXREG
+
+    call    waitForTXIFHigh
+
+    banksel i2cRcvBuf
+    movf    i2cRcvBuf+1, W
+    banksel TXREG
+    movwf   TXREG
+
+    call    waitForTXIFHigh
+
+    banksel i2cRcvBuf
+    movf    i2cRcvBuf+2, W
+    banksel TXREG
+    movwf   TXREG
+
+    call    waitForTXIFHigh
+
+    banksel i2cRcvBuf
     movf    i2cRcvBuf+3, W
     banksel TXREG
     movwf   TXREG
+
+    call    waitForTXIFHigh
 
     banksel i2cRcvBuf
     movf    i2cRcvBuf+4, W
     banksel TXREG
     movwf   TXREG
 
-    banksel i2cRcvBuf
-    movf    i2cRcvBuf+2, W
-    banksel TXREG
-;    movwf   TXREG
+    call    waitForTXIFHigh
 
     ;debug mks end
 
     goto    resetSerialPortReceiveBuffer
 
 ; end of handleAllStatusRbtCmd
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; waitForTXIFHigh
+;
+; Waits in a loop for TXIF bit in register PIR1 to go high. This signals that the EUSART serial
+; port transmit buffer is empty and a new byte can be sent.
+;
+
+waitForTXIFHigh:
+
+    ifdef debug_on    ; if debugging, don't wait for interrupt to be set high as the MSSP is not
+    return            ; simulated by the IDE
+    endif
+
+    banksel PIR1
+
+wfth1:
+    btfss   PIR1, TXIF
+    goto    wfth1
+
+    return
+
+; end of waitForTXIFHigh
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
