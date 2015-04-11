@@ -429,6 +429,9 @@ SERIAL_XMT_BUF_LEN_RES  EQU 161     ; one is used in the variable definition, on
                                     ; in each block, so it is generally accessed using an Indirect
                                     ; Register in the Linear Addressing space.
 
+SERIAL_XMT_BUF_LINEAR_LOC_H EQU 0x22
+SERIAL_XMT_BUF_LINEAR_LOC_L EQU 0xd0
+
 I2C_RCV_BUF_LEN      EQU .31     ; these should always match with one preceded by a period
 I2C_RCV_BUF_LEN_RES  EQU 31      ; one is used in the variable definition, one used in code
 
@@ -478,6 +481,13 @@ I2C_XMT_BUF_LEN_RES  EQU 31      ; one is used in the variable definition, one u
     serialPortErrorCnt
 
     serialRcvBuf:SERIAL_RCV_BUF_LEN_RES
+
+    serialXmtBufNumBytes
+    serialXmtBufPtrH
+    serialXmtBufPtrL
+    serialXmtBufLen
+
+    ;the transmit buffer is reserved in another memory bank due to its large size
 
     hiCurrentLimitPot       ; value for digital pot which sets the high current limit value
     loCurrentLimitPot       ; value for digital pot which sets the high current limit value
@@ -531,12 +541,25 @@ I2C_XMT_BUF_LEN_RES  EQU 31      ; one is used in the variable definition, one u
 
 ;-----------------
 
-; Assign variables in RAM - Bank 3 - must set BSR to 3 to access
-; Bank 2 has 80 bytes of free space
+; Assign large buffer in RAM - Bank 9~11 - must set BSR to 9~11 to access
+;
+; Banks 9~11 have 80 bytes of free space each
+;
+; This is the serial port transmit buffer and is meant to be addressed via Indirect Register using
+; linear memory mapping space so that the large buffer can be accommodated. The linear map starts
+; at 0x2000 which is mapped to Bank0:0x20, 0x2050 -> Bank1:0x20, 0x20a0 -> Bank2:0x20, and so
+; forth. Only the Dual Ported Ram / General Purpose Ram (DPR/GPR) is included and it all appears
+; contiguous when accessed via Indirect Register. Incrementing the Indirect Register beyond the end
+; of one section skips to the next section. Unimplemented sections of DPR/GPR are still mapped, but
+; are not usable.
+;
+; NOTE: If the serial transmit buffer is moved from 0x4a0, buffer pointer location defines
+; SERIAL_XMT_BUF_LINEAR_LOC_H:SERIAL_XMT_BUF_LINEAR_LOC_L must be adjusted.
+;
 
- cblock 0x120                ; starting address
+ cblock 0x4a0               ; starting address ~ at 0x22d0 in the linear memory map space
 
-	block1PlaceHolder
+    serialXmtBuf:SERIAL_XMT_BUF_LEN_RES
 
  endc
 
@@ -604,18 +627,20 @@ start:
 
     call    setup           ; preset variables and configure hardware
 
+    ; call    handleAllStatusRbtCmd ;debug mks -- remove this
+
 mainLoop:
 
 ;debug mks
 
- ;   call    handleAllStatusRbtCmd
+;db1:
 
- ;   call    handleSerialPacket
+  ;  call    handleSerialPortTransmitInt
 
-;    call    handleSerialPortReceiveInt
+  ;  banksel PIE1
+  ;  btfsc   PIE1, TXIE
+  ;  goto    db1
 
-;    banksel flags2
-;    goto    rsl2    ;debug mks -- remove this
 ;debug mks end
 
     banksel flags2                          ; handle packet in serial receive buffer if ready
@@ -715,43 +740,38 @@ handleAllStatusRbtCmd:
 
     call    requestAndReceivePktFromSlavePIC
 
-    ;debug mks
+    movlw   SERIAL_XMT_BUF_LINEAR_LOC_H ; set pointer to start of transmit buffer
+    movwf   FSR0H
+    movlw   SERIAL_XMT_BUF_LINEAR_LOC_L
+    movwf   FSR0L
+
+    ;debug mks start
+
     banksel i2cRcvBuf
+
     movf    i2cRcvBuf, W
-    banksel TXREG
-    movwf   TXREG
+    movwi   FSR0++
 
-    call    waitForTXIFHigh
-
-    banksel i2cRcvBuf
     movf    i2cRcvBuf+1, W
-    banksel TXREG
-    movwf   TXREG
+    movwi   FSR0++
 
-    call    waitForTXIFHigh
-
-    banksel i2cRcvBuf
     movf    i2cRcvBuf+2, W
-    banksel TXREG
-    movwf   TXREG
+    movwi   FSR0++
 
-    call    waitForTXIFHigh
-
-    banksel i2cRcvBuf
     movf    i2cRcvBuf+3, W
-    banksel TXREG
-    movwf   TXREG
+    movwi   FSR0++
 
-    call    waitForTXIFHigh
-
-    banksel i2cRcvBuf
     movf    i2cRcvBuf+4, W
-    banksel TXREG
-    movwf   TXREG
+    movwi   FSR0++
 
-    call    waitForTXIFHigh
+    movlw   0x81
+    movwi   FSR0++
 
     ;debug mks end
+
+    movlw   .6                              ; send 5 bytes
+
+    call    startSerialPortTransmit
 
     goto    resetSerialPortReceiveBuffer
 
@@ -1506,16 +1526,60 @@ noOERRError:
 
 handleSerialPortTransmitInt:
 
-;    i2cXmtBufNumBytes
-;    i2cXmtBufPtrH
-;    i2cXmtBufPtrL
-;    i2cXmtBuf:I2C_XMT_BUF_LEN_RES
+    banksel serialXmtBufPtrH                ; load FSR0 with buffer pointer
+    movf    serialXmtBufPtrH, W
+    movwf   FSR0H
+    movf    serialXmtBufPtrL, W
+    movwf   FSR0L
 
+    moviw   FSR0++                          ; send next byte in buffer
+    banksel TXREG
+    movwf   TXREG
 
+    banksel serialXmtBufPtrH                ; store updated FSR0 in buffer pointer
+    movf    FSR0H, W
+    movwf   serialXmtBufPtrH
+    movf    FSR0L, W
+    movwf   serialXmtBufPtrL
+
+    decfsz  serialXmtBufNumBytes, F
+    goto    endISR                          ; more data to send, exit with interrupt still enabled
+
+    banksel PIE1                            ; no more data, disable further transmit interrupts
+    bcf     PIE1, TXIE
 
     goto    endISR
 
 ; end of handleSerialPortTransmitInt
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; startSerialPortTransmit
+;
+; Initiates sending of the bytes in the transmit buffer. The transmission will be performed by an
+; interrupt routine.
+;
+; WREG should contain the number of bytes to send.
+; the bytes to be sent should be in the serial port transmit buffer serialXmtBuf
+;
+
+startSerialPortTransmit:
+
+    banksel serialXmtBufNumBytes            ; store number of bytes to transmit
+    movwf   serialXmtBufNumBytes
+
+    banksel serialXmtBufPtrH                ; set pointer to start of transmit buffer
+    movlw   SERIAL_XMT_BUF_LINEAR_LOC_H
+    movwf   serialXmtBufPtrH
+    movlw   SERIAL_XMT_BUF_LINEAR_LOC_L
+    movwf   serialXmtBufPtrL
+
+    banksel PIE1                            ; enable transmit interrupts
+    bsf     PIE1, TXIE                      ; interrupt will trigger when transmit buffers empty
+
+    return
+
+; end of startSerialPortTransmit
 ;--------------------------------------------------------------------------------------------------
    
 ;--------------------------------------------------------------------------------------------------
