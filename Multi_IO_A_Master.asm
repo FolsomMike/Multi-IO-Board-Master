@@ -242,6 +242,10 @@
 
 ;#define debug_on 1     ; set debug testing "on"
 
+; version of this software
+
+SOFTWARE_VERSION_MSB    EQU 0x01
+SOFTWARE_VERSION_LSB    EQU 0x01
 
 ; Rabbit to Master PIC Commands -- sent by Rabbit to trigger actions
 
@@ -437,6 +441,8 @@ I2C_RCV_BUF_LEN_RES  EQU 31      ; one is used in the variable definition, one u
 
 I2C_XMT_BUF_LEN      EQU .31     ; these should always match with one preceded by a period
 I2C_XMT_BUF_LEN_RES  EQU 31      ; one is used in the variable definition, one used in code
+
+NUM_SLAVES EQU 0x08              ; number of Slave PICs on the I2C bus
 
 ; end of Software Definitions
 ;--------------------------------------------------------------------------------------------------
@@ -729,47 +735,80 @@ parseCommandFromSerialPacket:
 
 handleAllStatusRbtCmd:
 
-; debug mks -- need to scan through all Slaves
+    banksel serialXmtBufPtrH
+    movlw   SERIAL_XMT_BUF_LINEAR_LOC_H ; set pointer to start of transmit buffer
+    movwf   serialXmtBufPtrH
+    movlw   SERIAL_XMT_BUF_LINEAR_LOC_L
+    movwf   serialXmtBufPtrL
 
     banksel scratch0
-    movlw   0x00                        ; Slave PIC address
-    movwf   scratch0
-    movlw   .5                          ; number of bytes expected in return packet
+    movlw   NUM_SLAVES                  ; initialize slave counter
+    movwf   scratch2
+
+hASRCLoop:
+
+    movf    scratch2, W
+    sublw   NUM_SLAVES                  ; compute next slave address
+;    movlw   0x00    ;debug mks
+    movwf   scratch0                    ; store Slave PIC address
+
+    movlw   .8                          ; number of bytes expected in return packet
     movwf   scratch1
-    movlw   PIC_GET_ALL_STATUS_CMD      ; command
+
+    movlw   PIC_GET_ALL_STATUS_CMD      ; command to slaves
 
     call    requestAndReceivePktFromSlavePIC
 
-    movlw   SERIAL_XMT_BUF_LINEAR_LOC_H ; set pointer to start of transmit buffer
+    banksel serialXmtBufPtrH
+    movf    serialXmtBufPtrH, W            ; set pointer current location
     movwf   FSR0H
-    movlw   SERIAL_XMT_BUF_LINEAR_LOC_L
+    movf    serialXmtBufPtrL, W
     movwf   FSR0L
-
-    ;debug mks start
 
     banksel i2cRcvBuf
 
-    movf    i2cRcvBuf, W
+    movf    i2cRcvBuf, W                ; slave's I2C address
+    ;movlw   0x5a -- debug mks -- remove this
+
     movwi   FSR0++
 
-    movf    i2cRcvBuf+1, W
+    movf    i2cRcvBuf+1, W              ; slave's software version most significant byte
     movwi   FSR0++
 
-    movf    i2cRcvBuf+2, W
+    movf    i2cRcvBuf+2, W              ; slave's software version least significant byte
     movwi   FSR0++
 
-    movf    i2cRcvBuf+3, W
+    movf    i2cRcvBuf+3, W              ; slave's flag byte
     movwi   FSR0++
 
-    movf    i2cRcvBuf+4, W
+    movf    i2cRcvBuf+4, W              ; slave's communication error count
     movwi   FSR0++
 
-    movlw   0x81
+    movf    i2cRcvBuf+5, W              ; slave's max A/D buffer byte count
     movwi   FSR0++
 
-    ;debug mks end
+    movf    i2cRcvBuf+6, W              ; slave's A/D value
+    movwi   FSR0++
 
-    movlw   .6                              ; send 5 bytes
+    movf    i2cRcvBuf+7, W              ; slave's packet checksum
+    movwi   FSR0++
+
+    banksel flags
+
+    movf    FSR0H, W                    ; store updated pointer
+    movwf   serialXmtBufPtrH
+    movf    FSR0L, W
+    movwf   serialXmtBufPtrL
+
+;debug mks -- put next two lines back in
+    decfsz  scratch2, F                 ; loop until all slaves queried
+    goto    hASRCLoop
+
+    movlw   0x81                        ; debug mks -- replace this value with actual checksum
+    movwi   FSR0++
+
+    movlw   .65                         ; number of bytes to send to master
+                                        ; (bytes/pkt * numSlaves) + master's checksum
 
     call    startSerialPortTransmit
 
@@ -852,7 +891,8 @@ setup:
     
 ;end of hardware configuration
 
-	
+    call    clearSerialPortXmtBuf           ; zero the serial port transmit buffer
+
 ; enable the interrupts
 
 	bsf	    INTCON,PEIE	    ; enable peripheral interrupts (Timer0 and serial port are peripherals)
@@ -1581,7 +1621,38 @@ startSerialPortTransmit:
 
 ; end of startSerialPortTransmit
 ;--------------------------------------------------------------------------------------------------
-   
+
+;--------------------------------------------------------------------------------------------------
+; clearSerialPortXmtBuf
+;
+; Sets all bytes up to 255 in the Serial Port transmit buffer to zero. If the buffer is larger
+; than 255 bytes, only the first 255 will be zeroed.
+;
+
+clearSerialPortXmtBuf:
+
+    movlw   SERIAL_XMT_BUF_LINEAR_LOC_H     ; set pointer to start of transmit buffer
+    movwf   FSR0H
+    movlw   SERIAL_XMT_BUF_LINEAR_LOC_L
+    movwf   FSR0L
+
+    banksel scratch0                        ; get buffer size to count number of bytes zeroed
+    movlw   SERIAL_XMT_BUF_LEN
+    movwf   scratch0
+
+    movlw   0x00
+
+cSPXBLoop:
+
+    movwi   FSR0++
+    decfsz  scratch0
+    goto    cSPXBLoop
+
+    return
+
+; end of clearSerialPortXmtBuf
+;--------------------------------------------------------------------------------------------------
+
 ;--------------------------------------------------------------------------------------------------
 ; SetBank0ClrWDT        
 ;
