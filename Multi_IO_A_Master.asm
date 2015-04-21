@@ -415,32 +415,33 @@ SLAVE_PIC_RD_CODE   EQU     b'11100001'
 
 ; bits in flags variable
 
-UNUSED     EQU     0x0
+UNUSED              EQU 0
 
 ; bits in flags2 variable
 
-HEADER_BYTE_1_RCVD  EQU     0x00
-HEADER_BYTE_2_RCVD  EQU     0x01
-LENGTH_BYTE_VALID   EQU     0x02
-SERIAL_PACKET_READY EQU     0x03
+HEADER_BYTE_1_RCVD  EQU 0
+HEADER_BYTE_2_RCVD  EQU 1
+LENGTH_BYTE_VALID   EQU 2
+SERIAL_PACKET_READY EQU 3
 
-SERIAL_RCV_BUF_LEN      EQU .20     ; these should always match with one preceded by a period
-SERIAL_RCV_BUF_LEN_RES  EQU 20      ; one is used in the variable definition, one used in code
+; bits in statusFlags variable
 
-SERIAL_XMT_BUF_LEN      EQU .161    ; these should always match with one preceded by a period
-SERIAL_XMT_BUF_LEN_RES  EQU 161     ; one is used in the variable definition, one used in code
-                                    ; NOTE: This buffer is larger than the 80 block bytes of RAM
+RBT_COM_ERROR       EQU 0
+SLV_COM_ERROR       EQU 1
+
+SERIAL_RCV_BUF_LEN  EQU .20
+
+
+SERIAL_XMT_BUF_LEN  EQU .161        ; NOTE: This buffer is larger than the 80 block bytes of RAM
                                     ; in each block, so it is generally accessed using an Indirect
                                     ; Register in the Linear Addressing space.
 
 SERIAL_XMT_BUF_LINEAR_LOC_H EQU 0x22
 SERIAL_XMT_BUF_LINEAR_LOC_L EQU 0xd0
 
-I2C_RCV_BUF_LEN      EQU .31     ; these should always match with one preceded by a period
-I2C_RCV_BUF_LEN_RES  EQU 31      ; one is used in the variable definition, one used in code
+I2C_RCV_BUF_LEN      EQU .31
 
-I2C_XMT_BUF_LEN      EQU .31     ; these should always match with one preceded by a period
-I2C_XMT_BUF_LEN_RES  EQU 31      ; one is used in the variable definition, one used in code
+I2C_XMT_BUF_LEN      EQU .31
 
 NUM_SLAVES EQU 0x08              ; number of Slave PICs on the I2C bus
 
@@ -478,15 +479,26 @@ NUM_SLAVES EQU 0x08              ; number of Slave PICs on the I2C bus
 							; bit 6: 0 =
 							; bit 7: 0 =
 
+    statusFlags             ; bit 0: 0 = one or more com errors from Rabbit have occurred
+                            ; bit 1: 0 = one or more com errors from Slave PICs have occurred
+                            ; bit 2: 0 =
+                            ; bit 3: 0 =
+                            ; bit 4: 0 =
+                            ; bit 5: 0 =
+							; bit 6: 0 =
+							; bit 7: 0 =
+
+    serialPortErrorCnt      ; number of com errors from Rabbit via serial port
+    slaveI2CErrorCnt        ; number of com errors from Slave PICs via I2C bus
+
     serialIntScratch0
     serialRcvPktLen
     serialRcvPktCnt
     serialRcvBufPtrH
     serialRcvBufPtrL
     serialRcvBufLen
-    serialPortErrorCnt
-
-    serialRcvBuf:SERIAL_RCV_BUF_LEN_RES
+    
+    serialRcvBuf:SERIAL_RCV_BUF_LEN
 
     serialXmtBufNumBytes
     serialXmtBufPtrH
@@ -536,12 +548,12 @@ NUM_SLAVES EQU 0x08              ; number of Slave PICs on the I2C bus
     i2cXmtBufNumBytes
     i2cXmtBufPtrH
     i2cXmtBufPtrL
-    i2cXmtBuf:I2C_XMT_BUF_LEN_RES
+    i2cXmtBuf:I2C_XMT_BUF_LEN
 
     i2cRcvBufNumBytes
     i2cRcvBufPtrH
     i2cRcvBufPtrL
-    i2cRcvBuf:I2C_RCV_BUF_LEN_RES
+    i2cRcvBuf:I2C_RCV_BUF_LEN
 
  endc
 
@@ -565,7 +577,7 @@ NUM_SLAVES EQU 0x08              ; number of Slave PICs on the I2C bus
 
  cblock 0x4a0               ; starting address ~ at 0x22d0 in the linear memory map space
 
-    serialXmtBuf:SERIAL_XMT_BUF_LEN_RES
+    serialXmtBuf:SERIAL_XMT_BUF_LEN
 
  endc
 
@@ -633,7 +645,7 @@ start:
 
     call    setup           ; preset variables and configure hardware
 
-    ; call    handleAllStatusRbtCmd ;debug mks -- remove this
+;    call    handleAllStatusRbtCmd ;debug mks -- remove this
 
 mainLoop:
 
@@ -693,6 +705,8 @@ hspSumLoop:
 hspError:
 
     incf    serialPortErrorCnt, F           ; track errors
+    bsf     statusFlags,RBT_COM_ERROR
+
     goto    resetSerialPortReceiveBuffer
 
 ; end of handleSerialPacket
@@ -735,13 +749,10 @@ parseCommandFromSerialPacket:
 
 handleAllStatusRbtCmd:
 
-    banksel serialXmtBufPtrH
-    movlw   SERIAL_XMT_BUF_LINEAR_LOC_H ; set pointer to start of transmit buffer
-    movwf   serialXmtBufPtrH
-    movlw   SERIAL_XMT_BUF_LINEAR_LOC_L
-    movwf   serialXmtBufPtrL
+    call    setUpSerXmtBufForRbtAllStatusCmd
 
-    banksel scratch0
+    banksel flags
+
     movlw   NUM_SLAVES                  ; initialize slave counter
     movwf   scratch2
 
@@ -749,15 +760,31 @@ hASRCLoop:
 
     movf    scratch2, W
     sublw   NUM_SLAVES                  ; compute next slave address
-;    movlw   0x00    ;debug mks
     movwf   scratch0                    ; store Slave PIC address
 
-    movlw   .8                          ; number of bytes expected in return packet
+    movlw   .12                         ; number of bytes expected in return packet
     movwf   scratch1
 
     movlw   PIC_GET_ALL_STATUS_CMD      ; command to slaves
 
     call    requestAndReceivePktFromSlavePIC
+
+    ; validate the checksum of the received packet
+
+    banksel scratch0
+    movlw   .12                         ; number of data bytes plus checksum in packet
+    movwf   scratch0
+    addfsr  FSR0,-.12                   ; move pointer to first byte in packet
+
+    call    sumSeries                   ; sum all data bytes along with the checksum ending byte
+    btfsc   STATUS,Z
+    goto    hASRCCheckSumGood           ; sum was zero so checksum good
+
+    banksel flags                       ; flag and count the error, then transfer it anyway
+    incf    slaveI2CErrorCnt,F
+    bsf     statusFlags,SLV_COM_ERROR
+
+hASRCCheckSumGood:
 
     banksel serialXmtBufPtrH
     movf    serialXmtBufPtrH, W            ; set pointer current location
@@ -768,29 +795,39 @@ hASRCLoop:
     banksel i2cRcvBuf
 
     movf    i2cRcvBuf, W                ; slave's I2C address
-    ;movlw   0x5a -- debug mks -- remove this
-
     movwi   FSR0++
 
-    movf    i2cRcvBuf+1, W              ; slave's software version most significant byte
+    movf    i2cRcvBuf+.1, W             ; slave's software version most significant byte
     movwi   FSR0++
 
-    movf    i2cRcvBuf+2, W              ; slave's software version least significant byte
+    movf    i2cRcvBuf+.2, W             ; slave's software version least significant byte
     movwi   FSR0++
 
-    movf    i2cRcvBuf+3, W              ; slave's flag byte
+    movf    i2cRcvBuf+.3, W             ; slave's flag byte
     movwi   FSR0++
 
-    movf    i2cRcvBuf+4, W              ; slave's communication error count
+    movf    i2cRcvBuf+.4, W             ; slave's status byte
     movwi   FSR0++
 
-    movf    i2cRcvBuf+5, W              ; slave's max A/D buffer byte count
+    movf    i2cRcvBuf+.5, W             ; slave's communication error count
     movwi   FSR0++
 
-    movf    i2cRcvBuf+6, W              ; slave's A/D value
+    movf    i2cRcvBuf+.6, W             ; slave's max A/D buffer byte count
     movwi   FSR0++
 
-    movf    i2cRcvBuf+7, W              ; slave's packet checksum
+    movf    i2cRcvBuf+.7, W             ; slave's A/D value
+    movwi   FSR0++
+
+    movf    i2cRcvBuf+.8, W             ; unused -- for future use
+    movwi   FSR0++
+
+    movf    i2cRcvBuf+.9, W             ; unused -- for future use
+    movwi   FSR0++
+
+    movf    i2cRcvBuf+.10, W             ; unused -- for future use
+    movwi   FSR0++
+
+    movf    i2cRcvBuf+.11, W             ; slave's packet checksum
     movwi   FSR0++
 
     banksel flags
@@ -800,21 +837,155 @@ hASRCLoop:
     movf    FSR0L, W
     movwf   serialXmtBufPtrL
 
-;debug mks -- put next two lines back in
     decfsz  scratch2, F                 ; loop until all slaves queried
     goto    hASRCLoop
 
-    movlw   0x81                        ; debug mks -- replace this value with actual checksum
-    movwi   FSR0++
+    movlw   .106                        ; number of data bytes in packet which are checksummed
+    movwf   scratch0
+    call    calcAndStoreCheckSumSerPrtXmtBuf
 
-    movlw   .65                         ; number of bytes to send to master
-                                        ; (bytes/pkt * numSlaves) + master's checksum
+    movlw   .110                        ; number of bytes to send to Rabbit (see notes at the top
+                                        ; of function setUpSerXmtBufForRbtAllStatusCmd for info)
 
     call    startSerialPortTransmit
 
     goto    resetSerialPortReceiveBuffer
 
 ; end of handleAllStatusRbtCmd
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; setUpSerXmtBufForRbtAllStatusCmd
+;
+; Adds the header bytes, length byte, command byte, and various values from this Master PIC to the
+; start of the serial port transmit buffer and sets serialXmtBufPtrH:L ready to add data bytes.
+;
+; Notes on packet length:
+;
+;   10 data bytes from this Master PIC (includes the command byte)
+;   96 bytes from Slave PICS ~ 11 data bytes + 1 checksum byte = 12 bytes per Slave PIC * 8 slaves
+;   ---
+;   106 total (value passed to calcAndStoreCheckSumSerPrtXmtBuf; number bytes checksummed)
+;
+;   ADD (to determine length byte to insert into packet)
+;
+;   1 checksum byte for the overall packet
+;   107 total (value passed to setUpSerialXmtBuffer in this function for packet length)
+;
+;   ADD (to determine actual number of bytes to send to Rabbit)
+;
+;   2 header bytes
+;   1 length byte
+;   ---
+;   110 total (value passed to startSerialPortTransmit in function handleAllStatusRbtCmd)
+;
+; On Entry:
+;
+; On Exit:
+;
+; serialXmtBufPtrH:serialXmtBufPtrL will point to the location for the next data byte
+;
+
+setUpSerXmtBufForRbtAllStatusCmd:
+
+    banksel flags
+
+    movlw   .107                        ; setup serial port xmt buffer for proper number of bytes
+    movwf   scratch0                    ; (see notes at top of this function for details)
+
+    movlw   RBT_GET_ALL_STATUS          ; command byte for the xmt packet
+    movwf   scratch1
+
+    call    setUpSerialXmtBuffer
+
+    ;add values pertaining to this Master PIC before the data is added for the Slave PICs
+
+    movlw   SOFTWARE_VERSION_MSB
+    movwi   FSR0++
+
+    movlw   SOFTWARE_VERSION_LSB
+    movwi   FSR0++
+
+    movf    flags,W
+    movwi   FSR0++
+
+    movf    statusFlags,W
+    movwi   FSR0++
+
+    movf    serialPortErrorCnt,W
+    movwi   FSR0++
+
+    movf    slaveI2CErrorCnt,W
+    movwi   FSR0++
+
+    movlw   0x55                        ; unused -- for future use
+    movwi   FSR0++
+
+    movlw   0xaa                        ; unused -- for future use
+    movwi   FSR0++
+
+    movlw   0x5a                        ; unused -- for future use
+    movwi   FSR0++
+
+    ; clear appropriate error counts, flags, etc. to start tracking anew
+
+    banksel flags
+    clrf    serialPortErrorCnt
+    clrf    slaveI2CErrorCnt
+    bcf     statusFlags,RBT_COM_ERROR
+    bcf     statusFlags,SLV_COM_ERROR
+
+    banksel serialXmtBufPtrH            ; store updated pointer
+    movf    FSR0H,W
+    movwf   serialXmtBufPtrH
+    movf    FSR0L,W
+    movwf   serialXmtBufPtrL
+
+    return
+
+; end of setUpSerXmtBufForRbtAllStatusCmd
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; setUpSerialXmtBuffer
+;
+; Adds the header bytes, length byte, and command byte to the start of the serial port transmit
+; buffer and sets FSR0 ready to add data bytes.
+;
+; On Entry:
+;
+; scratch0 should contain the number of data bytes plus one for the checksum byte in the packet
+; scratch1 should contain the command byte
+;
+; On Exit:
+;
+; FSR0 will point to the location for the first data byte
+;
+
+setUpSerialXmtBuffer:
+
+    movlw   SERIAL_XMT_BUF_LINEAR_LOC_H     ; set FSR0 to start of transmit buffer
+    movwf   FSR0H
+    movlw   SERIAL_XMT_BUF_LINEAR_LOC_L
+    movwf   FSR0L
+
+    banksel scratch0
+
+    movlw   0xaa
+    movwi   FSR0++                          ; store first header byte
+
+    movlw   0x55
+    movwi   FSR0++                          ; store first header byte
+
+    movf    scratch0,W                      ; store length byte
+    movwi   FSR0++
+
+    movf    scratch1,W                      ; store command byte
+    movwi   FSR0++
+
+    return
+
+; end of setUpSerialXmtBuffer
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
@@ -853,6 +1024,9 @@ setup:
     banksel flags
     clrf    flags
     clrf    flags2
+    clrf    statusFlags
+    clrf    serialPortErrorCnt
+    clrf    slaveI2CErrorCnt
 
     call    setupClock      ; set system clock source and frequency
 
@@ -1201,9 +1375,13 @@ RSPRBnoOERRError:
 ;
 ; Sends a data request command to a Slave PIC via the I2C bus and then receives the return data.
 ;
+; On Entry:
+
 ; WREG should contain the packet request command
 ; scratch0 should contain the Slave PIC's I2C address
 ; scratch1 should contain the number of bytes expected in the data packet from the Slave
+;
+; On Exit:
 ;
 ; Data packet returned by the Slave PIC is stored in i2cRcvBuf
 ;
@@ -1235,6 +1413,8 @@ requestAndReceivePktFromSlavePIC:
 ; sendCommandToSlavePIC
 ;
 ; Sends a command byte to a Slave PIC via the I2C bus.
+;
+; On Entry:
 ;
 ; WREG should contain the command byte
 ; scratch0 should contain the slave's ID number (3 lsb's of the slave's IC2 address)
@@ -1273,8 +1453,14 @@ sendCommandToSlavePIC:
 ;
 ; Reads bytes from a Slave PIC via the I2C bus.
 ;
+; On Entry:
+;
 ; WREG should contain the number of bytes to read
 ; scratch0 should contain the slave's ID number (3 lsb's of the slave's IC2 address)
+;
+; On Exit:
+;
+; Data packet returned by the Slave PIC is stored in i2cRcvBuf
 ;
 
 readBytesFromSlavePIC:
@@ -1300,6 +1486,253 @@ readBytesFromSlavePIC:
     return
 
 ; end of readBytesFromSlavePIC
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; sendBytesToSlavePICViaI2C
+;
+; Sends bytes to a Slave PIC via the I2C bus.
+;
+; On entry:
+;
+; WREG should contain the slave's ID number (3 lsb's of the slave's IC2 address)
+; FSR0 should point to start of transmit buffer.
+; FSR1 should point to variable containing number of bytes to be transmitted. (must be > 0)
+;
+; On Exit:
+;
+
+sendBytesToSlavePICViaI2C:
+
+    call    clearSSP1IF             ; make sure flag is cleared before starting
+
+    call    generateI2CStart
+
+    lslf    WREG, W                 ; shift the address lsb bits up to merge with the write code
+    iorlw   SLAVE_PIC_WR_CODE       ; merge slave address lsbs with upper nibble and rd/wr flag
+
+    call    sendI2CByte             ; send addr byte in W register on I2C bus after SSP1IF goes high
+
+loopSBLP1:
+
+    moviw   FSR0++                  ; load next byte to be sent
+    call    sendI2CByte
+
+	decfsz	INDF1, F                ; count down number of bytes transferred
+	goto	loopSBLP1               ; not zero yet - transfer more bytes
+
+    call    waitForSSP1IFHighThenClearIt    ; wait for high flag upon transmission completion
+
+    call    generateI2CStop
+
+    call    waitForSSP1IFHighThenClearIt    ; wait for high flag upon stop condition finished
+
+    call    cleanUpI2CAndReturn             ; reset all status and error flags
+
+    return
+
+; end of sendBytesToSlavePICViaI2C
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; readBytesViaI2C
+;
+; Reads bytes from the I2C bus.
+;
+; On Entry:
+;
+; WREG should contain the slave's ID number (3 lsb's of the slave's IC2 address)
+; FSR0 should point to start of receive buffer.
+; FSR1 should point to variable containing number of bytes to be received. (must be > 0)
+;
+; On Exit:
+;
+; Data packet returned by the Slave PIC is stored in i2cRcvBuf
+; FSR0 will point to location in receive buffer after last byte received.
+;
+
+readBytesViaI2C:
+
+    call    clearSSP1IF             ; make sure flag is cleared before starting
+
+    call    generateI2CStart
+
+    lslf    WREG, W                 ; shift the address lsb bits up to merge with the read code
+    iorlw   SLAVE_PIC_RD_CODE       ; merge slave address lsbs with upper nibble and rd/wr flag
+
+    call    sendI2CByte             ; send addr byte in W register on I2C bus after SSP1IF goes high
+
+loopRBLP1:
+
+    call    waitForSSP1IFHighThenClearIt    ; wait for high flag upon transmission completion
+
+    banksel SSP1CON2                ; start clocking in byte from slave
+    bsf     SSP1CON2,RCEN
+
+    call    waitForSSP1IFHighThenClearIt    ; wait for high flag upon transmission completion
+
+    banksel SSP1BUF                 ; store the received byte in the buffer
+    movf    SSP1BUF, W
+    movwi   FSR0++
+
+	decfsz	INDF1, F                ; count down number of bytes transferred
+	goto	sendMore                ; not zero yet - transfer more bytes
+
+    goto	allSent
+
+sendMore:
+
+    banksel SSP1CON2                ; send ACK to continue reading
+    bcf     SSP1CON2,ACKDT          ; set low bit (ACK)
+    bsf     SSP1CON2,ACKEN          ; enable NACK transmission
+    goto	loopRBLP1
+
+allSent:
+
+    banksel SSP1CON2                ; send NACK to terminate read
+    bsf     SSP1CON2,ACKDT          ; set high bit (NACK)
+    bsf     SSP1CON2,ACKEN          ; enable NACK transmission
+
+    call    waitForSSP1IFHighThenClearIt    ; wait for high flag upon stop condition finished
+
+    banksel SSP1CON2
+    bcf     SSP1CON2,ACKDT          ; reset to low to send ACKs in future
+
+    call    generateI2CStop
+
+    call    waitForSSP1IFHighThenClearIt    ; wait for high flag upon stop condition finished
+
+    call    cleanUpI2CAndReturn             ; reset all status and error flags
+
+    return
+
+; end of readBytesViaI2C
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; calculateAndStoreCheckSum
+;
+; Calculates the checksum for a series of bytes in the i2cXmtBuf buffer, the address of which
+; should be in i2cXmtBufPtrH:L
+;
+; On Entry:
+;
+; scratch0 contains number of bytes in series
+; i2cXmtBufPtrH:i2cXmtBufPtrL contains address of the start of the buffer
+;
+; On Exit:
+;
+; The checksum will be stored at the end of the series.
+; FSR0 points to the location after the checksum.
+;
+
+calcAndStoreCheckSumForI2CXmtBuf:
+
+    banksel i2cXmtBufPtrH                   ; load FSR0 with buffer pointer
+    movf    i2cXmtBufPtrH,W
+    movwf   FSR0H
+    movf    i2cXmtBufPtrL,W
+    movwf   FSR0L
+
+    goto    calculateAndStoreCheckSum
+
+; end calcAndStoreCheckSumForI2CXmtBuf
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; calcAndStoreCheckSumSerPrtXmtBuf
+;
+; Calculates the checksum for a series of bytes in the serial port transmit buffer. The two
+; header bytes and the length byte are not included in the checksum.
+;
+; On Entry:
+;
+; scratch0 contains number of bytes in series, not including the 2 header bytes and 1 length byte
+;
+; On Exit:
+;
+; The checksum will be stored at the end of the series.
+; FSR0 points to the location after the checksum.
+;
+
+calcAndStoreCheckSumSerPrtXmtBuf:
+
+    movlw   SERIAL_XMT_BUF_LINEAR_LOC_H     ; set FSR0 to start of transmit buffer
+    movwf   FSR0H
+    movlw   SERIAL_XMT_BUF_LINEAR_LOC_L
+    movwf   FSR0L
+
+    addfsr  FSR0,.3                         ; skip 2 header bytes and 1 length byte
+
+    goto    calculateAndStoreCheckSum
+
+; end calcAndStoreCheckSumSerPrtXmtBuf
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; calculateAndStoreCheckSum
+;
+; Calculates the checksum for a series of bytes.
+;
+; On Entry:
+;
+; scratch0 contains number of bytes in series
+; FSR0 points to first byte in series.
+;
+; On Exit:
+;
+; The checksum will be stored at the end of the series.
+; FSR0 points to the location after the checksum.
+;
+
+calculateAndStoreCheckSum:
+
+    call    sumSeries                       ; add all bytes in the buffer
+
+    comf    WREG,W                          ; use two's complement to get checksum value
+    addlw   .1
+
+    movwi   FSR0++                          ; store the checksum at the end of the summed series
+
+    return
+
+; end calculateAndStoreCheckSum
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; sumSeries
+;
+; Calculates the sum of a series of bytes. Only the least significant byte of the sum is retained.
+;
+; On Entry:
+;
+; scratch0 contains number of bytes in series.
+; FSR0 points to first byte in series.
+;
+; On Exit:
+;
+; The least significant byte of the sum will be returned in WREG.
+; Z flag will be set if the LSB of the sum is zero.
+; FSR0 points to the location after the last byte summed.
+;
+
+sumSeries:
+
+    banksel scratch0
+
+    clrf    WREG
+
+sumSLoop:                       ; sum the series
+
+    addwf   INDF0,W
+    addfsr  INDF0,1
+
+    decfsz  scratch0,F
+    goto    sumSLoop
+
+    return
+
+; end sumSeries
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
@@ -1496,6 +1929,7 @@ rsl2:
 rslError:
 
     incf    serialPortErrorCnt, F           ; track errors
+    bsf     statusFlags, RBT_COM_ERROR
     call    resetSerialPortReceiveBuffer    
     goto    rsllp
 
@@ -1645,7 +2079,7 @@ clearSerialPortXmtBuf:
 cSPXBLoop:
 
     movwi   FSR0++
-    decfsz  scratch0
+    decfsz  scratch0,F
     goto    cSPXBLoop
 
     return
@@ -1786,116 +2220,6 @@ setDigitalPotInChip:
     goto    cleanUpI2CAndReturn             ; reset all status and error flags
 
 ; end of setDigitalPotInChip
-;--------------------------------------------------------------------------------------------------
-
-;--------------------------------------------------------------------------------------------------
-; sendBytesToSlavePICViaI2C
-;
-; Sends bytes to a Slave PIC via the I2C bus.
-;
-; WREG should contain the slave's ID number (3 lsb's of the slave's IC2 address)
-; FSR0 should point to start of transmit buffer.
-; FSR1 should point to variable containing number of bytes to be transmitted. (must be > 0)
-;
-
-sendBytesToSlavePICViaI2C:
-
-    call    clearSSP1IF             ; make sure flag is cleared before starting
-
-    call    generateI2CStart
-
-    lslf    WREG, W                 ; shift the address lsb bits up to merge with the write code
-    iorlw   SLAVE_PIC_WR_CODE       ; merge slave address lsbs with upper nibble and rd/wr flag
-
-    call    sendI2CByte             ; send addr byte in W register on I2C bus after SSP1IF goes high
-
-loopSBLP1:
-
-    moviw   FSR0++                  ; load next byte to be sent
-    call    sendI2CByte
-
-	decfsz	INDF1, F                ; count down number of bytes transferred
-	goto	loopSBLP1               ; not zero yet - transfer more bytes
-
-    call    waitForSSP1IFHighThenClearIt    ; wait for high flag upon transmission completion
-
-    call    generateI2CStop
-
-    call    waitForSSP1IFHighThenClearIt    ; wait for high flag upon stop condition finished
-
-    call    cleanUpI2CAndReturn             ; reset all status and error flags
-
-    return
-
-; end of sendBytesToSlavePICViaI2C
-;--------------------------------------------------------------------------------------------------
-
-;--------------------------------------------------------------------------------------------------
-; readBytesViaI2C
-;
-; Reads bytes from the I2C bus.
-;
-; WREG should contain the slave's ID number (3 lsb's of the slave's IC2 address)
-; FSR0 should point to start of receive buffer.
-; FSR1 should point to variable containing number of bytes to be received. (must be > 0)
-;
-
-readBytesViaI2C:
-
-    call    clearSSP1IF             ; make sure flag is cleared before starting
-
-    call    generateI2CStart
-
-    lslf    WREG, W                 ; shift the address lsb bits up to merge with the read code
-    iorlw   SLAVE_PIC_RD_CODE       ; merge slave address lsbs with upper nibble and rd/wr flag
-
-    call    sendI2CByte             ; send addr byte in W register on I2C bus after SSP1IF goes high
-
-loopRBLP1:
-
-    call    waitForSSP1IFHighThenClearIt    ; wait for high flag upon transmission completion
-
-    banksel SSP1CON2                ; start clocking in byte from slave
-    bsf     SSP1CON2,RCEN
-
-    call    waitForSSP1IFHighThenClearIt    ; wait for high flag upon transmission completion
-
-    banksel SSP1BUF                 ; store the received byte in the buffer
-    movf    SSP1BUF, W
-    movwi   FSR0++
-
-	decfsz	INDF1, F                ; count down number of bytes transferred
-	goto	sendMore                ; not zero yet - transfer more bytes
-
-    goto	allSent
-
-sendMore:
-
-    banksel SSP1CON2                ; send ACK to continue reading
-    bcf     SSP1CON2,ACKDT          ; set low bit (ACK)
-    bsf     SSP1CON2,ACKEN          ; enable NACK transmission
-    goto	loopRBLP1
-
-allSent:
-
-    banksel SSP1CON2                ; send NACK to terminate read
-    bsf     SSP1CON2,ACKDT          ; set high bit (NACK)
-    bsf     SSP1CON2,ACKEN          ; enable NACK transmission
-
-    call    waitForSSP1IFHighThenClearIt    ; wait for high flag upon stop condition finished
-
-    banksel SSP1CON2
-    bcf     SSP1CON2,ACKDT          ; reset to low to send ACKs in future
-
-    call    generateI2CStop
-
-    call    waitForSSP1IFHighThenClearIt    ; wait for high flag upon stop condition finished
-
-    call    cleanUpI2CAndReturn             ; reset all status and error flags
-
-    return
-
-; end of readBytesViaI2C
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
