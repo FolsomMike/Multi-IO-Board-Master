@@ -685,7 +685,8 @@ handleSerialPacket:
     movf    serialRcvPktLen, W          ; copy number of bytes to variable for counting
     movwf   serialRcvPktCnt
 
-    clrf    FSR0H                       ; point FSR0 at start of receive buffer
+    movlw   high serialRcvBuf           ; point FSR0 at start of receive buffer
+    movwf   FSR0H
     movlw   serialRcvBuf
     movwf   FSR0L
 
