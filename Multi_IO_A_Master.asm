@@ -919,13 +919,13 @@ setUpSerXmtBufForRbtAllStatusCmd:
     movf    slaveI2CErrorCnt,W
     movwi   FSR0++
 
-    movlw   0x55                        ; unused -- for future use
+    movlw   0x01                        ; unused -- for future use
     movwi   FSR0++
 
-    movlw   0xaa                        ; unused -- for future use
+    movlw   0x02                        ; unused -- for future use
     movwi   FSR0++
 
-    movlw   0x5a                        ; unused -- for future use
+    movlw   0x03                        ; unused -- for future use
     movwi   FSR0++
 
     ; clear appropriate error counts, flags, etc. to start tracking anew
