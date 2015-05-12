@@ -249,25 +249,33 @@ SOFTWARE_VERSION_LSB    EQU 0x01
 
 ; Rabbit to Master PIC Commands -- sent by Rabbit to trigger actions
 
-RBT_NO_ACTION                    EQU 0x00
-RBT_GET_ALL_STATUS               EQU 0x01
-RBT_GET_SLAVE_PEAK_DATA          EQU 0x02
-;RABBIT_RESET_ENCODERS           EQU 0x01
-;RABBIT_GET_ENCODERS             EQU 0x02
-;RABBIT_GET_PEAK_DATA            EQU 0x03
-;RABBIT_SET_GAIN                 EQU 0x04
-;RABBIT_SET_OFFSET               EQU 0x05
-;RABBIT_RESET                    EQU 0xff
+
+RBT_NO_ACTION                   EQU .0
+RBT_ACK_CMD                     EQU .1
+RBT_GET_ALL_STATUS              EQU .2
+RBT_SET_INSPECTION_MODE         EQU .3
+RBT_SET_GAIN                    EQU .4
+RBT_SET_OFFSET                  EQU .5
+RBT_SET_ONOFF_CMD               EQU .6
+RBT_GET_PEAK_DATA               EQU .7
+
+; this section from legacy code -- delete after functions added to above list
+;RABBIT_RESET_ENCODERS          EQU 0x01
+;RABBIT_GET_ENCODERS            EQU 0x02
+;RABBIT_GET_PEAK_DATA           EQU 0x03
+;RABBIT_SET_GAIN                EQU 0x04
+;RABBIT_SET_OFFSET              EQU 0x05
+;RABBIT_RESET                   EQU 0xff
 
 ; Master PIC to Slave PIC Commands -- sent by Master to Slaves via I2C to trigger actions
 
-PIC_NO_ACTION_CMD               EQU 0x00
-PIC_GET_ALL_STATUS_CMD          EQU 0x01
-PIC_START_CMD                   EQU 0x02
-PIC_GET_PEAK_PKT_CMD            EQU 0X03
-PIC_ENABLE_POT_CMD              EQU 0x04
-PIC_DISABLE_POT_CMD             EQU 0x05
-
+PIC_NO_ACTION_CMD               EQU .0
+PIC_ACK_CMD                     EQU .1
+PIC_GET_ALL_STATUS_CMD          EQU .2
+PIC_START_CMD                   EQU .3
+PIC_GET_PEAK_PKT_CMD            EQU .4
+PIC_ENABLE_POT_CMD              EQU .5
+PIC_DISABLE_POT_CMD             EQU .6
 
 ; end of Defines
 ;--------------------------------------------------------------------------------------------------
@@ -388,13 +396,6 @@ ENCODERS_RD     EQU PORTC
 ; the lsb is R/W bit - set to 0 for write (bit 0)
 
 DIG_POT_WR_CODE EQU     b'10101000'
-
-; address of each pot inside the chip
-
-POT1_ADDR           EQU     0x0
-POT2_ADDR           EQU     0x1
-POT3_ADDR           EQU     0x2
-POT4_ADDR           EQU     0x3
 
 ; I2C bus ID bytes for writing and reading to the Slave PICs (see notes at top of page)
 ; upper nibble = 1110 (bits 7-4)
@@ -645,7 +646,7 @@ start:
 
     call    setup           ; preset variables and configure hardware
 
-;    call    handleAllStatusRbtCmd ;debug mks -- remove this
+ ;   call    handleSetGainRbtCmd ;debug mks -- remove this
 
 mainLoop:
 
@@ -721,7 +722,7 @@ hspError:
 
 parseCommandFromSerialPacket:
 
-    banksel flags2
+    banksel serialRcvBuf
 
 ; parse the command byte by comparing with each command
 
@@ -731,7 +732,12 @@ parseCommandFromSerialPacket:
     goto    handleAllStatusRbtCmd
 
     movf    serialRcvBuf, W
-    sublw   RBT_GET_SLAVE_PEAK_DATA
+    sublw   RBT_SET_GAIN
+    btfsc   STATUS,Z
+    goto    handleSetGainRbtCmd
+
+    movf    serialRcvBuf, W
+    sublw   RBT_GET_PEAK_DATA
     btfsc   STATUS,Z
     goto    handleGetSlavePeakDataRbtCmd
 
@@ -743,7 +749,7 @@ parseCommandFromSerialPacket:
 ;--------------------------------------------------------------------------------------------------
 ; handleAllStatusRbtCmd
 ;
-; Handles the PIC_GET_ALL_STATUS command, returning the status byte, the error count for data from
+; Handles the RBT_GET_ALL_STATUS command, returning the status byte, the error count for data from
 ; the Rabbit, the error count for data from the Slave PICS, and the status and error count for
 ; data from the Master as retrieved from each of the Slaves.
 ;
@@ -853,6 +859,52 @@ hASRCCheckSumGood:
     goto    resetSerialPortReceiveBuffer
 
 ; end of handleAllStatusRbtCmd
+;--------------------------------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------------------------------
+; handleSetGainRbtCmd
+;
+; Handles the RBT_SET_GAIN command, invoking the specified Slave PIC to enable the digital pot
+; chip which it controls, transmitting the setting to the specified pot in the enabled chip, then
+; invoking the Slave PIC to disable the pot.
+;
+
+handleSetGainRbtCmd:
+
+
+    ;enable the digital pot chip
+
+    banksel serialRcvBuf
+    movf    serialRcvBuf+1, W           ; get I2C address of Slave PIC which enables/disables chip
+    banksel scratch0                    ; slave address
+    movwf   scratch0
+    movlw   PIC_ENABLE_POT_CMD          ; command to slave
+    call    sendCommandToSlavePIC
+
+    ; set the digital pot value
+
+    banksel serialRcvBuf
+    movf    serialRcvBuf+2, W           ; get number of pot in chip to be set
+    banksel scratch0
+    movwf   scratch0
+    banksel serialRcvBuf
+    movf    serialRcvBuf+3, W           ; get new pot value
+    banksel scratch0
+    movwf   scratch1
+    call    setDigitalPotInChip
+
+    ;disable the digital pot chip
+
+    banksel serialRcvBuf
+    movf    serialRcvBuf+1, W           ; get I2C address of Slave PIC which enables/disables chip
+    banksel scratch0                    ; slave address
+    movwf   scratch0
+    movlw   PIC_DISABLE_POT_CMD          ; command to slave
+    call    sendCommandToSlavePIC
+
+    goto    resetSerialPortReceiveBuffer
+
+; end of handleSetGainRbtCmd
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
@@ -1057,8 +1109,8 @@ setup:
     movwf   OPTION_REG      ; Option Register = 0x58   0101 1000 b
                             ; bit 7 = 0 : weak pull-ups are enabled by individual port latch values
                             ; bit 6 = 1 : interrupt on rising edge
-                            ; bit 5 = 0 : TOCS ~ Timer 0 run by internal instruction cycle clock (CLKOUT ~ Fosc/4)
-                            ; bit 4 = 1 : TOSE ~ Timer 0 increment on high-to-low transition on RA4/T0CKI/CMP2 pin (not used here)
+                            ; bit 5 = 0 : TMR0CS ~ Timer 0 run by internal instruction cycle clock (CLKOUT ~ Fosc/4)
+                            ; bit 4 = 1 : TMR0SE ~ Timer 0 increment on high-to-low transition on RA4/T0CKI/CMP2 pin (not used here)
 							; bit 3 = 1 : PSA ~ Prescaler disabled; Timer0 will be 1:1 with Fosc/4
                             ; bit 2 = 0 : Bits 2:0 control prescaler:
                             ; bit 1 = 0 :    000 = 1:2 scaling for Timer0 (if prescaler enabled)
@@ -1737,27 +1789,6 @@ sumSLoop:                       ; sum the series
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
-; setDigitalPots
-;
-; Sets the digital pot values to their stored settings.
-;
-
-setDigitalPots:
-
-
-    banksel scratch0
-    movlw   POT1_ADDR
-    movwf   scratch0
-    ;debug mks -- movlw   VOLTAGE_MONITOR_POT
-    movwf   scratch1
-    call    setDigitalPotInChip
-
-    return
-
-; end of setDigitalPots
-;--------------------------------------------------------------------------------------------------
-
-;--------------------------------------------------------------------------------------------------
 ; handleInterrupt
 ;
 ; All interrupts call this function.  The interrupt flags must be polled to determine which
@@ -2192,7 +2223,8 @@ LoopSD1:
 ; Sets to the value in scratch1 the pot specified by scratch0 in whichever digital pot chip is
 ; currently enabled.
 ;
-; The desired chip is enabled by sending the PIC_ENABLE_POT_CMD to the PIC connected to that chip.
+; The desired chip should already have been enabled by sending the PIC_ENABLE_POT_CMD to the PIC
+; connected to that chip.
 ;
 
 setDigitalPotInChip:
