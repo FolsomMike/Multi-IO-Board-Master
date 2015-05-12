@@ -83,7 +83,7 @@ MP_LINKER_DEBUG_OPTION=
 # Rules for buildStep: assemble
 ifeq ($(TYPE_IMAGE), DEBUG_RUN)
 ${OBJECTDIR}/_ext/1472/Multi_IO_A_Master.o: ../Multi_IO_A_Master.asm  nbproject/Makefile-${CND_CONF}.mk
-	@${MKDIR} ${OBJECTDIR}/_ext/1472 
+	@${MKDIR} "${OBJECTDIR}/_ext/1472" 
 	@${RM} ${OBJECTDIR}/_ext/1472/Multi_IO_A_Master.o.d 
 	@${RM} ${OBJECTDIR}/_ext/1472/Multi_IO_A_Master.o 
 	@${FIXDEPS} dummy.d -e "${OBJECTDIR}/_ext/1472/Multi_IO_A_Master.err" $(SILENT) -c ${MP_AS} $(MP_EXTRA_AS_PRE) -d__DEBUG -d__MPLAB_DEBUGGER_PK3=1 -q -p$(MP_PROCESSOR_OPTION)  -l\"${OBJECTDIR}/_ext/1472/Multi_IO_A_Master.lst\" -e\"${OBJECTDIR}/_ext/1472/Multi_IO_A_Master.err\" $(ASM_OPTIONS)   -o\"${OBJECTDIR}/_ext/1472/Multi_IO_A_Master.o\" \"../Multi_IO_A_Master.asm\" 
@@ -92,7 +92,7 @@ ${OBJECTDIR}/_ext/1472/Multi_IO_A_Master.o: ../Multi_IO_A_Master.asm  nbproject/
 	
 else
 ${OBJECTDIR}/_ext/1472/Multi_IO_A_Master.o: ../Multi_IO_A_Master.asm  nbproject/Makefile-${CND_CONF}.mk
-	@${MKDIR} ${OBJECTDIR}/_ext/1472 
+	@${MKDIR} "${OBJECTDIR}/_ext/1472" 
 	@${RM} ${OBJECTDIR}/_ext/1472/Multi_IO_A_Master.o.d 
 	@${RM} ${OBJECTDIR}/_ext/1472/Multi_IO_A_Master.o 
 	@${FIXDEPS} dummy.d -e "${OBJECTDIR}/_ext/1472/Multi_IO_A_Master.err" $(SILENT) -c ${MP_AS} $(MP_EXTRA_AS_PRE) -q -p$(MP_PROCESSOR_OPTION)  -l\"${OBJECTDIR}/_ext/1472/Multi_IO_A_Master.lst\" -e\"${OBJECTDIR}/_ext/1472/Multi_IO_A_Master.err\" $(ASM_OPTIONS)   -o\"${OBJECTDIR}/_ext/1472/Multi_IO_A_Master.o\" \"../Multi_IO_A_Master.asm\" 
