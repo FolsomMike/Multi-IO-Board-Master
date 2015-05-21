@@ -254,8 +254,8 @@ RBT_NO_ACTION                   EQU .0
 RBT_ACK_CMD                     EQU .1
 RBT_GET_ALL_STATUS              EQU .2
 RBT_SET_INSPECTION_MODE         EQU .3
-RBT_SET_GAIN                    EQU .4
-RBT_SET_OFFSET                  EQU .5
+RBT_SET_POT                     EQU .4
+RBT_UNUSED1                     EQU .5
 RBT_SET_ONOFF_CMD               EQU .6
 RBT_GET_PEAK_DATA               EQU .7
 
@@ -646,7 +646,7 @@ start:
 
     call    setup           ; preset variables and configure hardware
 
- ;   call    handleSetGainRbtCmd ;debug mks -- remove this
+ ;   call    handleSetPotRbtCmd ;debug mks -- remove this
 
 mainLoop:
 
@@ -732,9 +732,9 @@ parseCommandFromSerialPacket:
     goto    handleAllStatusRbtCmd
 
     movf    serialRcvBuf, W
-    sublw   RBT_SET_GAIN
+    sublw   RBT_SET_POT
     btfsc   STATUS,Z
-    goto    handleSetGainRbtCmd
+    goto    handleSetPotRbtCmd
 
     movf    serialRcvBuf, W
     sublw   RBT_GET_PEAK_DATA
@@ -862,14 +862,14 @@ hASRCCheckSumGood:
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
-; handleSetGainRbtCmd
+; handleSetPotRbtCmd
 ;
-; Handles the RBT_SET_GAIN command, invoking the specified Slave PIC to enable the digital pot
+; Handles the RBT_SET_POT command, invoking the specified Slave PIC to enable the digital pot
 ; chip which it controls, transmitting the setting to the specified pot in the enabled chip, then
 ; invoking the Slave PIC to disable the pot.
 ;
 
-handleSetGainRbtCmd:
+handleSetPotRbtCmd:
 
 
     ;enable the digital pot chip
@@ -904,7 +904,7 @@ handleSetGainRbtCmd:
 
     goto    resetSerialPortReceiveBuffer
 
-; end of handleSetGainRbtCmd
+; end of handleSetPotRbtCmd
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
@@ -1905,7 +1905,14 @@ handleSerialPortReceiveInt:
     ; if the packet ready flag is set, ignore all data until main loop clears it
 
     banksel flags2
-    btfsc   flags2, SERIAL_PACKET_READY
+    btfss   flags2, SERIAL_PACKET_READY
+    goto    readSerialLoop
+
+    ; packet ready flag set means last packet still being processed, read byte to clear interrupt
+    ; or it will result in an endless interrupt loop, byte is tossed and a resync will occur
+
+    banksel RCREG
+    movf    RCREG, W
     goto    rslExit
 
     ;RCREG is a two byte FIFO and may contain two bytes; read until RCIF flag is clear
