@@ -13,7 +13,7 @@
                    displayName="Source Files"
                    projectFiles="true">
       <itemPath>../p16f1459.inc</itemPath>
-      <itemPath>../Multi_IO_A_Master.asm</itemPath>
+      <itemPath>../Multi-IO-A-Master.asm</itemPath>
     </logicalFolder>
     <logicalFolder name="ExternalFiles"
                    displayName="Important Files"

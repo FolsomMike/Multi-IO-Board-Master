@@ -10,9 +10,9 @@ CND_CONF=default
 CND_DISTDIR=dist
 TMPDIR=build/${CND_CONF}/${IMAGE_TYPE}/tmp-packaging
 TMPDIRNAME=tmp-packaging
-OUTPUT_PATH=dist/${CND_CONF}/${IMAGE_TYPE}/Multi-IO_Board_Master.X.${IMAGE_TYPE}.${OUTPUT_SUFFIX}
-OUTPUT_BASENAME=Multi-IO_Board_Master.X.${IMAGE_TYPE}.${OUTPUT_SUFFIX}
-PACKAGE_TOP_DIR=multi-ioboardmaster.x/
+OUTPUT_PATH=dist/${CND_CONF}/${IMAGE_TYPE}/Multi-IO-Board-Master.X.${IMAGE_TYPE}.${OUTPUT_SUFFIX}
+OUTPUT_BASENAME=Multi-IO-Board-Master.X.${IMAGE_TYPE}.${OUTPUT_SUFFIX}
+PACKAGE_TOP_DIR=multi-io-board-master.x/
 
 # Functions
 function checkReturnCode
@@ -57,15 +57,15 @@ mkdir -p ${TMPDIR}
 
 # Copy files and create directories and links
 cd "${TOP}"
-makeDirectory ${TMPDIR}/multi-ioboardmaster.x/bin
+makeDirectory ${TMPDIR}/multi-io-board-master.x/bin
 copyFileToTmpDir "${OUTPUT_PATH}" "${TMPDIR}/${PACKAGE_TOP_DIR}bin/${OUTPUT_BASENAME}" 0755
 
 
 # Generate tar file
 cd "${TOP}"
-rm -f ${CND_DISTDIR}/${CND_CONF}/package/multi-ioboardmaster.x.tar
+rm -f ${CND_DISTDIR}/${CND_CONF}/package/multi-io-board-master.x.tar
 cd ${TMPDIR}
-tar -vcf ../../../../${CND_DISTDIR}/${CND_CONF}/package/multi-ioboardmaster.x.tar *
+tar -vcf ../../../../${CND_DISTDIR}/${CND_CONF}/package/multi-io-board-master.x.tar *
 checkReturnCode
 
 # Cleanup
