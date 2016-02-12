@@ -25,7 +25,7 @@
 ; Transverse Ring 1 / Transverse Ring 2 System
 ;
 ; The transverse head is divided into two rings of shoes. One board handles Ring 1 and other
-; handles Ring 2. The Rabbit software is slightl  different for each ring, but all the Master &
+; handles Ring 2. The Rabbit software is slightly  different for each ring, but all the Master &
 ; Slave PIC code is identical for either.
 ;
 ; Wall System
@@ -119,6 +119,12 @@
 ; always equal to the clock position. This allows the Slaves to quickly tag the peaks with the value
 ; in the counter at the time the peak is detected without requiring any extra monitoring of the Sync
 ; line or incrementing of the counter...it's all handled automatically.
+;
+; For Transverse, the Master does not send pulses to the slaves via the Sync line. The Transverse
+; shoes do not rotate, so a shoe never changes clock position. Since the clock tracking timer is
+; not being updated for this board, the Slave simply stores the clock position of its associated
+; shoe in the timer so the peak tracking routine will retrieve that same clock position for each
+; peak. This allows the routine to be exactly the same for all systems.
 ;
 ; Sync & Sync Reset I/O Configuration
 ;
