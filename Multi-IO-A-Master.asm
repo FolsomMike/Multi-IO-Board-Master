@@ -589,30 +589,22 @@ NUM_SLAVES EQU 0x08              ; number of Slave PICs on the I2C bus
  endc
 
 ;-----------------
-
-; NOTE: use of this block by interrupts is not necessary with the PIC16f1459 as it pushes critical
-; registers onto a stack.
+; Define variables in the memory which is mirrored in all RAM banks.
 ;
-; Define variables in the memory which is mirrored in all 4 RAM banks.  This area is usually used
-; by the interrupt routine for saving register states because there is no need to worry about
-; which bank is current when the interrupt is invoked.
-; On the PIC16F628A, 0x70 thru 0x7f is mirrored in all 4 RAM banks.
-
-; NOTE:
-; This block cannot be used in ANY bank other than by the interrupt routine.
-; The mirrored sections:
+; On older PICs, this section was used to store context registers during an interrupt as the
+; current bank was unknown upon entering the interrupt. Now, the section can be used for any
+; purpose as the more powerful PICs automatically save the context on interrupt.
 ;
 ;	Bank 0		Bank 1		Bank 2		Bank3
 ;	70h-7fh		f0h-ffh		170h-17fh	1f0h-1ffh
 ;
 
- cblock	0x70
-    W_TEMP
-    FSR0L_TEMP
-    FSR0H_TEMP
-    STATUS_TEMP
-    PCLATH_TEMP	
- endc
+    cblock	0x70
+
+ 
+    endc
+
+;-----------------
 
 ; end of Variables in RAM
 ;--------------------------------------------------------------------------------------------------
@@ -633,7 +625,6 @@ NUM_SLAVES EQU 0x08              ; number of Slave PICs on the I2C bus
 ; NOTE: You must clear PCLATH before jumping to the interrupt routine - if PCLATH has bits set it
 ; will cause a jump into an unexpected program memory bank.
 
-	clrf	STATUS          ; set to known state
     clrf    PCLATH          ; set to bank 0 where the ISR is located
     goto 	handleInterrupt	; points to interrupt service routine
 
@@ -929,7 +920,7 @@ handleSetPotRbtCmd:
 ;   ADD (to determine length byte to insert into packet)
 ;
 ;   1 checksum byte for the overall packet
-;   107 total (value passed to setUpSerialXmtBuffer in this function for packet length)
+;   107 total (value passed to setUpSerialXmtBuffer (this function) for packet length)
 ;
 ;   ADD (to determine actual number of bytes to send to Rabbit)
 ;
@@ -939,6 +930,9 @@ handleSetPotRbtCmd:
 ;   110 total (value passed to startSerialPortTransmit in function handleAllStatusRbtCmd)
 ;
 ; On Entry:
+;
+; usartScratch0 should contain the number of data bytes plus one for the checksum byte in the packet
+; usartScratch1 should contain the command byte
 ;
 ; On Exit:
 ;
@@ -1008,17 +1002,37 @@ setUpSerXmtBufForRbtAllStatusCmd:
 ;--------------------------------------------------------------------------------------------------
 ; setUpSerialXmtBuffer
 ;
-; Adds the header bytes, length byte, and command byte to the start of the serial port transmit
-; buffer and sets FSR0 ready to add data bytes.
+; Adds the header bytes, length byte, command byte, and various values from this Master PIC to the
+; start of the serial port transmit buffer and sets serialXmtBufPtrH:L ready to add data bytes.
+;
+; Notes on packet length:
+;
+;   Example with 1 data bytes...
+;
+;   2 bytes (command byte + data byte)
+;   ---
+;   2 total (value passed to calcAndStoreCheckSumSerPrtXmtBuf; number bytes checksummed)
+;
+;   ADD (to determine length byte to insert into packet)
+;
+;   1 checksum byte for the overall packet
+;   3 total (value passed to setUpSerialXmtBuffer (this function) for packet length)
+;
+;   ADD (to determine actual number of bytes to send)
+;
+;   2 header bytes
+;   1 length byte
+;   ---
+;   6 total (value passed to startSerialPortTransmit)
 ;
 ; On Entry:
 ;
-; scratch0 should contain the number of data bytes plus one for the checksum byte in the packet
-; scratch1 should contain the command byte
+; usartScratch0 should contain the number of data bytes plus one for the checksum byte in the packet
+; usartScratch1 should contain the command byte
 ;
 ; On Exit:
 ;
-; FSR0 will point to the location for the first data byte
+; serialXmtBufPtrH:serialXmtBufPtrL will point to the location for the next data byte
 ;
 
 setUpSerialXmtBuffer:
@@ -1344,8 +1358,9 @@ setupSerialPort:
 
     ;set UART mode and enable receiver and transmitter
 
-    banksel ANSELB          ; RB5/RB7 digital I/O as RX/TX
-    clrf    ANSELB
+    banksel ANSELB          ; RB5/RB7 digital I/O for use as RX/TX
+    bcf     ANSELB,RB5
+    bcf     ANSELB,RB7
 
     banksel TRISB
     bsf     TRISB, TRISB5   ; set RB5/RX to input
