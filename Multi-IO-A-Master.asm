@@ -443,9 +443,6 @@ SERIAL_XMT_BUF_LEN  EQU .161        ; NOTE: This buffer is larger than the 80 bl
                                     ; in each block, so it is generally accessed using an Indirect
                                     ; Register in the Linear Addressing space.
 
-SERIAL_XMT_BUF_LINEAR_LOC_H EQU 0x22
-SERIAL_XMT_BUF_LINEAR_LOC_L EQU 0xd0
-
 I2C_RCV_BUF_LEN      EQU .31
 
 I2C_XMT_BUF_LEN      EQU .31
@@ -587,6 +584,11 @@ NUM_SLAVES EQU 0x08              ; number of Slave PICs on the I2C bus
     serialXmtBuf:SERIAL_XMT_BUF_LEN
 
  endc
+ 
+; Compute address of serialXmtBuf in linear data memory for use as a large buffer
+SERIAL_XMT_BUF_LINEAR_ADDRESS   EQU ((serialXmtBuf/.128)*.80)+0x2000
+SERIAL_XMT_BUF_LINEAR_LOC_H     EQU high SERIAL_XMT_BUF_LINEAR_ADDRESS
+SERIAL_XMT_BUF_LINEAR_LOC_L     EQU low SERIAL_XMT_BUF_LINEAR_ADDRESS
 
 ;-----------------
 ; Define variables in the memory which is mirrored in all RAM banks.
