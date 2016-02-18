@@ -282,6 +282,7 @@ PIC_START_CMD                   EQU .3
 PIC_GET_PEAK_PKT_CMD            EQU .4
 PIC_ENABLE_POT_CMD              EQU .5
 PIC_DISABLE_POT_CMD             EQU .6
+PIC_GET_VALUE_CMD               EQU .7
 
 ; end of Defines
 ;--------------------------------------------------------------------------------------------------
