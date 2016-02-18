@@ -1140,7 +1140,9 @@ setup:
     
 ;end of hardware configuration
 
-    call    clearSerialPortXmtBuf           ; zero the serial port transmit buffer
+    movlp   high clearSerialXMTBuffer      ; zero the serial transmit buffer
+    call    clearSerialXMTBuffer           
+    movlp   high setup   
 
 ; enable the interrupts
 
@@ -2119,37 +2121,6 @@ startSerialPortTransmit:
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
-; clearSerialPortXmtBuf
-;
-; Sets all bytes up to 255 in the Serial Port transmit buffer to zero. If the buffer is larger
-; than 255 bytes, only the first 255 will be zeroed.
-;
-
-clearSerialPortXmtBuf:
-
-    movlw   SERIAL_XMT_BUF_LINEAR_LOC_H     ; set pointer to start of transmit buffer
-    movwf   FSR0H
-    movlw   SERIAL_XMT_BUF_LINEAR_LOC_L
-    movwf   FSR0L
-
-    banksel scratch0                        ; get buffer size to count number of bytes zeroed
-    movlw   SERIAL_XMT_BUF_LEN
-    movwf   scratch0
-
-    movlw   0x00
-
-cSPXBLoop:
-
-    movwi   FSR0++
-    decfsz  scratch0,F
-    goto    cSPXBLoop
-
-    return
-
-; end of clearSerialPortXmtBuf
-;--------------------------------------------------------------------------------------------------
-
-;--------------------------------------------------------------------------------------------------
 ; SetBank0ClrWDT        
 ;
 ; Set Bank 0, Clear high byte of FSR pointers, Clear WatchDog timer
@@ -2579,6 +2550,47 @@ debugFunc1:
     return
 
 ; end of debugFunc1
+;--------------------------------------------------------------------------------------------------
+    
+    org 0x800	;start code on page 2 of 2047 byte boundary
+    
+;--------------------------------------------------------------------------------------------------
+; clearSerialXMTBuffer
+;
+; Sets all of the bytes in the serial transmit buffer to zero.
+;
+
+clearSerialXMTBuffer:
+
+    movlw   SERIAL_XMT_BUF_LINEAR_LOC_H     ; starting address of buffer
+    movwf   FSR0H
+    movlw   SERIAL_XMT_BUF_LINEAR_LOC_L
+    movwf   FSR0L
+    
+    movlw   high SERIAL_XMT_BUF_LEN         ; counter to know when end of buffer is reached
+    movwf   FSR1H
+    movlw   low SERIAL_XMT_BUF_LEN
+    movwf   FSR1L
+    
+clearSerialXMTBufferLoop:
+    
+    clrf    INDF0                           ; clear the byte in the buffer
+    
+    addfsr  FSR0,.1                         ; point to next byte in buffer
+    
+    movlw   .1                              ; decrement the lower byte of the counter
+    subwf   FSR1L,F
+    btfsc   STATUS,C                        ; skip if FSR1L was less than 0
+    goto    clearSerialXMTBufferLoop
+    
+    subwf   FSR1H,F                         ; decrement the upper byte of the counter
+    btfsc   STATUS,C                        ; skip if FSR1H was less than 0
+    goto    clearSerialXMTBufferLoop
+    
+    return                                  ; if we made it to here, it means the end of the
+                                            ; buffer/counter has been reached
+
+; end of clearSerialXMTBufferLoop
 ;--------------------------------------------------------------------------------------------------
 
     END
