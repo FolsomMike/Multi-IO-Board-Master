@@ -264,7 +264,7 @@ RBT_SET_POT                     EQU .4
 RBT_UNUSED1                     EQU .5
 RBT_SET_ONOFF_CMD               EQU .6
 RBT_GET_PEAK_DATA               EQU .7
-RBT_GET_ALL_LAST_AD_VALUES_CMD  EQU .8
+RBT_GET_ALL_VALUES_CMD          EQU .8      ; Values to get from slaves specified by subcommand
 
 ; this section from legacy code -- delete after functions added to above list
 ;RABBIT_RESET_ENCODERS          EQU 0x01
@@ -285,8 +285,8 @@ PIC_ENABLE_POT_CMD              EQU .5
 PIC_DISABLE_POT_CMD             EQU .6
 PIC_GET_VALUE_CMD               EQU .7      ; Value to get specified by subcommand
 
-; Subcommands for PIC_GET_VALUE_CMD -- Master to Slaves immediately following PIC_GET_VALUE_CMD
-LAST_AD_VALUE_SUB               EQU .1      ; Master wants last value converted from analog to dig
+; Subcommands for RBT_GET_ALL_VALUES_CMD & PIC_GET_VALUE_CMD
+LAST_AD_VALUE_SUB               EQU .0      ; Host wants all last AD values from slaves
 
 ; end of Defines
 ;--------------------------------------------------------------------------------------------------
