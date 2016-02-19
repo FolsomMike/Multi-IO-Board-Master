@@ -700,15 +700,16 @@ hspSumLoop:
     incf    FSR0L, F
     decfsz  serialRcvPktCnt, F
     goto    hspSumLoop
+
+    movf    WREG, F                         ; test for zero
+    btfss   STATUS, Z                       ; error if not zero
+    goto    hspError                        ; checksum bad so handle error
     
-    movlw   high serialRcvBuf           ; point FSR0 at start of receive buffer
+    movlw   high serialRcvBuf               ; checksum good so handle command
     movwf   FSR0H
     movlw   low serialRcvBuf
     movwf   FSR0L
-
-    movf    WREG, F                         ; test for zero
-    btfsc   STATUS, Z                       ; error if not zero
-    goto    parseCommandFromSerialPacket    ; checksum good so handle command
+    goto    parseCommandFromSerialPacket 
 
 hspError:
 
@@ -735,6 +736,11 @@ parseCommandFromSerialPacket:
 ; parse the command byte by comparing with each command
 
     movf    INDF0, W
+    sublw   RBT_GET_ALL_LAST_AD_VALUES_CMD
+    btfsc   STATUS,Z
+    goto    handleGetAllLastADValuesRbtCmd
+    
+    movf    INDF0, W
     sublw   RBT_GET_ALL_STATUS
     btfsc   STATUS,Z
     goto    handleAllStatusRbtCmd
@@ -752,6 +758,130 @@ parseCommandFromSerialPacket:
     goto    resetSerialPortReceiveBuffer
 
 ; end of parseCommandFromSerialPacket
+;--------------------------------------------------------------------------------------------------
+    
+;--------------------------------------------------------------------------------------------------
+; handleGetAllLastADValuesRbtCmd
+;
+; Handles the RBT_GET_ALL_AD_VALUES_CMD command by retrieving the last AD value from each of the
+; slave PICs and then sending the collection of values to the Rabbit.
+;
+; Number of bytes to be checksummed (passed to calcAndStoreCheckSumSerPrtXmtBuf):
+;
+;   24 bytes from slave PICs ~ 2 data bytes + 1 checksum byte = 3 bytes per slave * 8 slaves
+;   01 bytes from this Master PIC -- command byte
+;   ---
+;   25 bytes total
+;
+; Number of bytes including checksum (passed to setUpSerialXmtBuffer):
+;
+;   24 bytes from slave PICs ~ 2 data bytes + 1 checksum byte = 3 bytes per slave * 8 slaves
+;   01 bytes from this Master PIC -- command byte
+;   01 bytes from this Master PIC -- check sum byte
+;   ---
+;   26 bytes total
+;
+; Number of bytes including checksum, header, and length (passed to startSerialPortTransmit):
+;
+;   24 bytes from slave PICs ~ 2 data bytes + 1 checksum byte = 3 bytes per slave * 8 slaves
+;   01 bytes from this Master PIC -- command byte
+;   01 bytes from this Master PIC -- check sum byte
+;   02 bytes from this Master PIC -- header bytes
+;   01 bytes from this Master PIC -- length byte
+;   ---
+;   29 bytes total
+;
+
+handleGetAllLastADValuesRbtCmd:
+    
+    banksel scratch0
+    
+    movlw   .26                 ; setup serial port xmt buffer for proper number of bytes
+    movwf   scratch0            ; (see notes at top of this function for details)
+
+    movlw   RBT_GET_ALL_LAST_AD_VALUES_CMD  ; command byte for the xmt packet
+    movwf   scratch1
+
+    call    setUpSerialXmtBuffer
+    
+    banksel serialXmtBufPtrH            ; store updated pointer
+    movf    FSR0H,W
+    movwf   serialXmtBufPtrH
+    movf    FSR0L,W
+    movwf   serialXmtBufPtrL
+    
+    banksel scratch2            ; initialize slave counter
+    movlw   NUM_SLAVES
+    movwf   scratch2
+
+hGALADVRCLoop:
+
+    movf    scratch2, W
+    sublw   NUM_SLAVES                  ; compute next slave address
+    movwf   scratch0                    ; store Slave PIC address
+
+    movlw   .3                          ; number of bytes expected in return packet
+    movwf   scratch1
+
+    movlw   PIC_GET_LAST_AD_VALUE_CMD   ; command to slaves
+
+    call    requestAndReceivePktFromSlavePIC
+
+    ; validate the checksum of the received packet
+
+    banksel scratch0
+    movlw   .3                          ; number of data bytes including checksum in packet
+    movwf   scratch0
+    addfsr  FSR0,-.3                    ; move pointer to first byte in packet
+
+    call    sumSeries                   ; sum all data bytes along with the checksum ending byte
+    btfsc   STATUS,Z
+    goto    hGALADVRCCheckSumGood       ; sum was zero so checksum good
+
+    banksel flags                       ; flag and count the error, then transfer it anyway
+    incf    slaveI2CErrorCnt,F
+    bsf     statusFlags,SLV_COM_ERROR
+
+hGALADVRCCheckSumGood:
+
+    banksel serialXmtBufPtrH            ; point FSR0 at proper register of serial transmit buffer
+    movf    serialXmtBufPtrH, W
+    movwf   FSR0H
+    movf    serialXmtBufPtrL, W
+    movwf   FSR0L
+
+    banksel i2cRcvBuf                   ; load last AD value into serial transmit buffer
+    movf    i2cRcvBuf, W                ; slave's upper byte of last AD value
+    movwi   FSR0++
+    movf    i2cRcvBuf+.1, W             ; slave's lower byte of last AD value
+    movwi   FSR0++
+    
+    movf    i2cRcvBuf+.2, W                ; slave's checksum for this packet
+    movwi   FSR0++
+
+    banksel serialXmtBufPtrH            ; store updated pointer
+    movf    FSR0H, W
+    movwf   serialXmtBufPtrH
+    movf    FSR0L, W
+    movwf   serialXmtBufPtrL
+
+    decfsz  scratch2, F                 ; loop until all slaves queried
+    goto    hGALADVRCLoop
+
+    movlw   .25                         ; number of data bytes in packet which are checksummed
+    movwf   scratch0
+    call    calcAndStoreCheckSumSerPrtXmtBuf
+
+    movlw   .29                         ; number of bytes to send to Rabbit (see notes at top of 
+                                        ; function for info)
+
+    call    startSerialPortTransmit
+
+    goto    resetSerialPortReceiveBuffer
+    
+    return
+
+; end of handleGetAllLastADValuesRbtCmd
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
