@@ -264,7 +264,7 @@ RBT_SET_POT                     EQU .4
 RBT_UNUSED1                     EQU .5
 RBT_SET_ONOFF_CMD               EQU .6
 RBT_GET_PEAK_DATA               EQU .7
-RBT_GET_ALL_VALUES_CMD          EQU .8      ; Values to get from slaves specified by subcommand
+RBT_GET_ALL_LAST_AD_VALUES_CMD  EQU .8
 
 ; this section from legacy code -- delete after functions added to above list
 ;RABBIT_RESET_ENCODERS          EQU 0x01
@@ -283,10 +283,7 @@ PIC_START_CMD                   EQU .3
 PIC_GET_PEAK_PKT_CMD            EQU .4
 PIC_ENABLE_POT_CMD              EQU .5
 PIC_DISABLE_POT_CMD             EQU .6
-PIC_GET_VALUE_CMD               EQU .7      ; Value to get specified by subcommand
-
-; Subcommands for RBT_GET_ALL_VALUES_CMD & PIC_GET_VALUE_CMD
-LAST_AD_VALUE_SUB               EQU .0      ; Host wants all last AD values from slaves
+PIC_GET_LAST_AD_VALUE_CMD       EQU .7
 
 ; end of Defines
 ;--------------------------------------------------------------------------------------------------
@@ -692,7 +689,7 @@ handleSerialPacket:
 
     movlw   high serialRcvBuf           ; point FSR0 at start of receive buffer
     movwf   FSR0H
-    movlw   serialRcvBuf
+    movlw   low serialRcvBuf
     movwf   FSR0L
 
     clrw                                ; preload W with zero
@@ -703,6 +700,11 @@ hspSumLoop:
     incf    FSR0L, F
     decfsz  serialRcvPktCnt, F
     goto    hspSumLoop
+    
+    movlw   high serialRcvBuf           ; point FSR0 at start of receive buffer
+    movwf   FSR0H
+    movlw   low serialRcvBuf
+    movwf   FSR0L
 
     movf    WREG, F                         ; test for zero
     btfsc   STATUS, Z                       ; error if not zero
@@ -723,24 +725,26 @@ hspError:
 ;
 ; Parses the command byte in a serial packet and performs the appropriate action.
 ;
+; ON ENTRY:
+;
+;   FSR0    =   address of serialRcvBuf
+;
 
 parseCommandFromSerialPacket:
 
-    banksel serialRcvBuf
-
 ; parse the command byte by comparing with each command
 
-    movf    serialRcvBuf, W
+    movf    INDF0, W
     sublw   RBT_GET_ALL_STATUS
     btfsc   STATUS,Z
     goto    handleAllStatusRbtCmd
 
-    movf    serialRcvBuf, W
+    movf    INDF0, W
     sublw   RBT_SET_POT
     btfsc   STATUS,Z
     goto    handleSetPotRbtCmd
 
-    movf    serialRcvBuf, W
+    movf    INDF0, W
     sublw   RBT_GET_PEAK_DATA
     btfsc   STATUS,Z
     goto    handleGetSlavePeakDataRbtCmd
