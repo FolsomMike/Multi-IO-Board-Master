@@ -756,6 +756,8 @@ parseCommandFromSerialPacket:
 ; the Rabbit, the error count for data from the Slave PICS, and the status and error count for
 ; data from the Master as retrieved from each of the Slaves.
 ;
+; See Device.handleAllStatusPacket method in Java host code for details on packet structure.
+;
 
 handleAllStatusRbtCmd:
 
