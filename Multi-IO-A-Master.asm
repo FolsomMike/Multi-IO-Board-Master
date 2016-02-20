@@ -1486,17 +1486,20 @@ setupSerialPort:
 
     clrf    serialPortErrorCnt
 
-    ;set the baud rate to 57,600 (will actually be 57.97K with 0.64% error)
-    ;for Fosc of 16 Mhz: SYNC = 0, BRGH = 1, BRG16 = 1, SPBRG = 68
+    ;aim for a baud rate of 57,600 (will actually be 57,553.95K with 0.07% error)
+    ;for Fosc of 32 Mhz: SYNC = 0, BRGH = 1, BRG16 = 1, SPBRG = 138
 
-    banksel TXSTA
+    banksel TXSTA               ; set BRGH to 1
     bsf     TXSTA, BRGH
+    
     banksel BAUDCON
-    bsf     BAUDCON, BRG16
-    banksel SPBRGH
-    clrf    SPBRGH
+    bsf     BAUDCON, BRG16      ; set BRG16 to 1
+    
+    banksel SPBRGH              ; set SPBRG to 138
+    movlw   0x08
+    movwf   SPBRGH
     banksel SPBRGL
-    movlw   .68
+    movlw   0x0A
     movwf   SPBRGL
 
     ;set UART mode and enable receiver and transmitter
@@ -2621,7 +2624,7 @@ setupI2CMaster7BitMode:
     ; set baud rate
     ; for Fosc at 16 Mhz, use 0x27 ~ for Fosc at 32 Mhz, use 0x4f
 
-    movlw   0x27			; set baud rate at 100kHz
+    movlw   0x4f			; set baud rate at 100kHz
     banksel SSP1ADD
     movwf   SSP1ADD
 
