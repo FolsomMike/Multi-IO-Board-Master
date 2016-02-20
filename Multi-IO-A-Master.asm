@@ -69,13 +69,13 @@
 ;
 ; System Clock
 ;
-; The system clock is configured to run at 16 MHz. The CLKOUT pin outputs a clock at Fosc/4 which
-; drives the input clock of one of the Slave PICs. The Slave PIC uses the PLL to generate a 16 MHz
-; from the 4 Mhz input. The CLKOUT pin of that Slave PIC drives the next Slave PIC and so forth.
+; The system clock is configured to run at 32 MHz. The CLKOUT pin outputs a clock at Fosc/4 which
+; drives the input clock of one of the Slave PICs. The Slave PIC uses the PLL to generate a 32 MHz
+; from the 8 Mhz input. The CLKOUT pin of that Slave PIC drives the next Slave PIC and so forth.
 ; Each PIC's CLKOUT output is FOSC/4 into the next PIC, so each must use its PLL to run its system
-; clock at 16 MHz.
+; clock at 32 MHz.
 ;
-; The 16 MHz is used since the Slave PICs run their A/D convertors at Fosc/16 to achieve a sample
+; The 32 MHz is used since the Slave PICs run their A/D convertors at Fosc/32 to achieve a sample
 ; period of 1 us. This is the fastest specified A/D conversion rate.
 ;
 ; The Ring 1 board also handles the encoder inputs and the tube detection photo eye. The code in
@@ -313,7 +313,7 @@ PIC_GET_LAST_AD_VALUE_CMD       EQU .7
  __CONFIG _CONFIG1, _FOSC_INTOSC & _WDTE_OFF & _PWRTE_OFF & _MCLRE_ON & _CP_OFF & _BOREN_OFF & _CLKOUTEN_ON & _IESO_OFF & _FCMEN_OFF
 ; CONFIG2
 ; __config 0xFFFF
- __CONFIG _CONFIG2, _WRT_ALL & _CPUDIV_NOCLKDIV & _USBLSCLK_48MHz & _PLLMULT_4x & _PLLEN_DISABLED & _STVREN_ON & _BORV_LO & _LPBOR_OFF & _LVP_OFF
+ __CONFIG _CONFIG2, _WRT_ALL & _CPUDIV_NOCLKDIV & _USBLSCLK_48MHz & _PLLMULT_4x & _PLLEN_ENABLED & _STVREN_ON & _BORV_LO & _LPBOR_OFF & _LVP_OFF
 
 ; _FOSC_INTOSC -> internal oscillator, I/O function on OSC1/CLKIN pin
 ; _WDTE_OFF -> watch dog timer disabled
@@ -1320,7 +1320,7 @@ initializeOutputs:
 ;
 ; Assumes clock related configuration bits are set as follows:
 ;
-;   _FOSC_INTOSC,  _CPUDIV_NOCLKDIV, _PLLMULT_4x, _PLLEN_DISABLED
+;   _FOSC_INTOSC,  _CPUDIV_NOCLKDIV, _PLLMULT_4x, _PLLEN_ENABLED
 ;
 ; Assumes all programmable clock related options are at Reset default values.
 ;
@@ -1329,14 +1329,12 @@ initializeOutputs:
 
 setupClock:
 
-    ; choose internal clock frequency of 16 Mhz
-
     banksel OSCCON
 
-    bsf     OSCCON, IRCF0
-    bsf     OSCCON, IRCF1
+    bsf     OSCCON, IRCF0   ; choose internal clock frequency of 32 MHz (after PLL multiplier)
+    bsf     OSCCON, IRCF1   
     bsf     OSCCON, IRCF2
-    bsf     OSCCON, IRCF3
+    bcf     OSCCON, IRCF3   ; IRCF<3:0> set to 1110 -> 8 MHz before PLL multiplier
 
     return
 
