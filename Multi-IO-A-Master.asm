@@ -753,7 +753,7 @@ parseCommandFromSerialPacket:
     movf    INDF0, W
     sublw   RBT_GET_RUN_DATA_CMD
     btfsc   STATUS,Z
-    goto    handleGetSlavePeakDataRbtCmd
+    goto    handleGetRunDataRbtCmd
 
     goto    resetSerialPortReceiveBuffer
 
@@ -1205,14 +1205,14 @@ setUpSerialXmtBuffer:
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
-; handleGetSlavePeakDataRbtCmd
+; handleGetRunDataRbtCmd
 ;
 ; Handles the PIC_GET_ALL_STATUS command, returning the status byte, the error count for data from
 ; the Rabbit, the error count for data from the Slave PICS, and the status and error count for
 ; data from the Master as retrieved from each of the Slaves.
 ;
 
-handleGetSlavePeakDataRbtCmd:
+handleGetRunDataRbtCmd:
 
     banksel flags2
 
@@ -1222,7 +1222,7 @@ handleGetSlavePeakDataRbtCmd:
 
     goto    resetSerialPortReceiveBuffer
 
-; end of handleGetSlavePeakDataRbtCmd
+; end of handleGetRunDataRbtCmd
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
