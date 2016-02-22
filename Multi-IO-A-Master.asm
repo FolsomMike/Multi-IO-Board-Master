@@ -1331,10 +1331,10 @@ setupClock:
 
     banksel OSCCON
 
-    bsf     OSCCON, IRCF0   ; choose internal clock frequency of 32 MHz (after PLL multiplier)
+    bcf     OSCCON, IRCF0   ; choose internal clock frequency of 32 MHz (after PLL multiplier)
     bsf     OSCCON, IRCF1   
     bsf     OSCCON, IRCF2
-    bcf     OSCCON, IRCF3   ; IRCF<3:0> set to 1110 -> 8 MHz before PLL multiplier
+    bsf     OSCCON, IRCF3   ; IRCF<3:0> set to 1110 -> 8 MHz before PLL multiplier
 
     return
 
@@ -1486,7 +1486,7 @@ setupSerialPort:
 
     clrf    serialPortErrorCnt
 
-    ;aim for a baud rate of 57,600 (will actually be 57,553.95K with 0.07% error)
+    ;aim for a baud rate of 57,600 (will actually be 57,553.95 with 0.07% error)
     ;for Fosc of 32 Mhz: SYNC = 0, BRGH = 1, BRG16 = 1, SPBRG = 138
 
     banksel TXSTA               ; set BRGH to 1
@@ -1496,10 +1496,10 @@ setupSerialPort:
     bsf     BAUDCON, BRG16      ; set BRG16 to 1
     
     banksel SPBRGH              ; set SPBRG to 138
-    movlw   0x08
+    movlw   0x00
     movwf   SPBRGH
     banksel SPBRGL
-    movlw   0x0A
+    movlw   0x8a
     movwf   SPBRGL
 
     ;set UART mode and enable receiver and transmitter
