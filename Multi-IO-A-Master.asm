@@ -263,7 +263,7 @@ RBT_SET_INSPECTION_MODE         EQU .3
 RBT_SET_POT                     EQU .4
 RBT_UNUSED1                     EQU .5
 RBT_SET_ONOFF_CMD               EQU .6
-RBT_GET_PEAK_DATA               EQU .7
+RBT_GET_RUN_DATA_CMD            EQU .7
 RBT_GET_ALL_LAST_AD_VALUES_CMD  EQU .8
 
 ; this section from legacy code -- delete after functions added to above list
@@ -751,7 +751,7 @@ parseCommandFromSerialPacket:
     goto    handleSetPotRbtCmd
 
     movf    INDF0, W
-    sublw   RBT_GET_PEAK_DATA
+    sublw   RBT_GET_RUN_DATA_CMD
     btfsc   STATUS,Z
     goto    handleGetSlavePeakDataRbtCmd
 
