@@ -1207,18 +1207,154 @@ setUpSerialXmtBuffer:
 ;--------------------------------------------------------------------------------------------------
 ; handleGetRunDataRbtCmd
 ;
-; Handles the PIC_GET_ALL_STATUS command, returning the status byte, the error count for data from
-; the Rabbit, the error count for data from the Slave PICS, and the status and error count for
-; data from the Master as retrieved from each of the Slaves.
+; Handles the RBT_GET_RUN_DATA_CMD command by retrieving each slave's run data, processing the data,
+; and then sending the processed data to the Rabbit.
+;
+; Sent on to the rabbit:
+;   Each slave's min A\D value
+;   Each slave's max A\D value
+;   Clock map
+;
+; Number of bytes to be checksummed (passed to calcAndStoreCheckSumSerPrtXmtBuf):
+;
+;   16 bytes for overall mins       ~ 02 data bytes per slave * 8 slaves = 32 data bytes
+;   16 bytes for overall maxs       ~ 02 data bytes per slave * 8 slaves = 32 data bytes
+;   48 bytes from this Master PIC   ~ clock map
+;   01 bytes from this Master PIC   ~ command byte
+;   ---
+;   81 bytes total
+;
+; Number of bytes including checksum (passed to setUpSerialXmtBuffer):
+;
+;   32 bytes from slave PICs        ~ 04 data bytes per slave * 8 slaves = 32 data bytes
+;   48 bytes from this Master PIC   ~ clock map
+;   01 bytes from this Master PIC   ~ command byte
+;   01 bytes from this Master PIC   ~ check sum byte
+;   ---
+;   82 bytes total
+;
+; Number of bytes including checksum, header, and length (passed to startSerialPortTransmit):
+;
+;   32 bytes from slave PICs        ~ 04 data bytes per slave * 8 slaves = 32 data bytes
+;   48 bytes from this Master PIC   ~ clock map
+;   01 bytes from this Master PIC   ~ command byte
+;   01 bytes from this Master PIC   ~ check sum byte
+;   02 bytes from this Master PIC   ~ header bytes
+;   01 bytes from this Master PIC   ~ length byte
+;   ---
+;   85 bytes total
+;
 ;
 
 handleGetRunDataRbtCmd:
 
-    banksel flags2
+    banksel scratch0
+    
+    movlw   .82                         ; setup serial port xmt buffer for proper number of bytes
+    movwf   scratch0                    ; (includes checksum and command -- see top of function)
 
-    movlw   0x69
-    banksel TXREG
-    movwf   TXREG
+    movlw   RBT_GET_RUN_DATA_CMD        ; command byte for the serial xmt packet
+    movwf   scratch1
+
+    call    setUpSerialXmtBuffer
+    
+    banksel serialXmtBufPtrH            ; store updated pointer
+    movf    FSR0H,W
+    movwf   serialXmtBufPtrH
+    movf    FSR0L,W
+    movwf   serialXmtBufPtrL
+    
+    banksel scratch2                    ; initialize slave counter
+    movlw   NUM_SLAVES
+    movwf   scratch2
+
+hGRDRC_loop:
+
+    movf    scratch2, W
+    sublw   NUM_SLAVES                  ; compute next slave address
+    movwf   scratch0                    ; store Slave PIC address
+
+    movlw   .53                         ; number of bytes expected in return packet
+    movwf   scratch1                    ; (includes checksum)
+
+    movlw   PIC_GET_RUN_DATA_CMD        ; command to slaves
+
+    call    requestAndReceivePktFromSlavePIC
+
+    ; validate the checksum of the received packet
+
+    banksel scratch0
+    movlw   .53                         ; number of data bytes including checksum in slave packet
+    movwf   scratch0
+    addfsr  FSR0,-.53                   ; move pointer to first byte in packet
+
+    call    sumSeries                   ; sum all data bytes along with the checksum ending byte
+    btfsc   STATUS,Z
+    goto    hGRDRC_checkSumGood         ; sum was zero so checksum good
+
+    banksel flags                       ; flag and count the error, then transfer it anyway
+    incf    slaveI2CErrorCnt,F
+    bsf     statusFlags,SLV_COM_ERROR
+
+hGRDRC_checkSumGood:
+
+    banksel serialXmtBufPtrH            ; point FSR0 at proper register of serial transmit buffer
+    movf    serialXmtBufPtrH, W
+    movwf   FSR0H
+    movf    serialXmtBufPtrL, W
+    movwf   FSR0L
+
+    banksel i2cRcvBuf                   ; load slave's overall min A/D into serial transmit buffer
+    movf    i2cRcvBuf, W                ; upper byte of min
+    movwi   FSR0++
+    movf    i2cRcvBuf+.1, W             ; lower byte of min
+    movwi   FSR0++
+
+    banksel i2cRcvBuf                   ; load slave's overall max A/D into serial transmit buffer
+    movf    i2cRcvBuf, W                ; upper byte of max
+    movwi   FSR0++
+    movf    i2cRcvBuf+.1, W             ; lower byte of max
+    movwi   FSR0++
+    
+    //WIP HSS// -- clock map should be handled right here instead of skipped over
+    addfsr  FSR0,.48                    ; skip over slave's clock map
+    //WIP HSS// end
+    
+    addfsr  FSR0,.1                     ; skip over the slave's checksum
+
+    banksel serialXmtBufPtrH            ; store updated pointer
+    movf    FSR0H,W
+    movwf   serialXmtBufPtrH
+    movf    FSR0L,W
+    movwf   serialXmtBufPtrL
+
+    decfsz  scratch2,F                  ; loop until all slaves queried
+    goto    hGRDRC_loop
+    
+    //WIP HSS// -- the clock map should be loaded properly instead of just 0s
+    
+    movlw   .48                         ; clock map is 48 bytes
+    movwf   scratch2
+    
+    movlw   0x00
+    
+hGRDRC_clockMapLoop:
+    
+    movwi   FSR0++                      ; populate clock map with 0s
+    
+    decfsz  scratch2
+    goto    hGRDRC_clockMapLoop
+    
+    //WIP HSS// end
+
+    movlw   .81                         ; number of data bytes in packet which are checksummed
+    movwf   scratch0                    ; (includes command -- see notes at top of function)
+    call    calcAndStoreCheckSumSerPrtXmtBuf
+
+    movlw   .85                         ; number of bytes to send to Rabbit (includes header,
+                                        ; length, command, and checksum -- see top of function)
+
+    call    startSerialPortTransmit
 
     goto    resetSerialPortReceiveBuffer
 
