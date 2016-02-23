@@ -1286,7 +1286,8 @@ hGRDRC_loop:
     banksel scratch0
     movlw   .53                         ; number of data bytes including checksum in slave packet
     movwf   scratch0
-    addfsr  FSR0,-.53                   ; move pointer to first byte in packet
+    addfsr  FSR0,-.32                   ; move pointer to first byte in packet (-53)
+    addfsr  FSR0,-.21                   ; addfsr instruction can only handle -32 to 31
 
     call    sumSeries                   ; sum all data bytes along with the checksum ending byte
     btfsc   STATUS,Z
@@ -1317,7 +1318,8 @@ hGRDRC_checkSumGood:
     movwi   FSR0++
     
     ;//WIP HSS// -- clock map should be handled right here instead of skipped over
-    addfsr  FSR0,.48                    ; skip over slave's clock map
+    addfsr  FSR0,.31                    ; skip over slave's clock map (+48)
+    addfsr  FSR0,.17                    ; addfsr instruction can only handle -32 to 31
     ;//WIP HSS// end
     
     addfsr  FSR0,.1                     ; skip over the slave's checksum
