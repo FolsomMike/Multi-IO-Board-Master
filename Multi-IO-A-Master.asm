@@ -1334,7 +1334,7 @@ hGRDRC_checkSumGood:
     movlw   .48                         ; clock map is 48 bytes
     movwf   scratch2
     
-    movlw   0x00
+    movlw   0x7F
     
 hGRDRC_clockMapLoop:
     
@@ -1342,6 +1342,9 @@ hGRDRC_clockMapLoop:
     
     decfsz  scratch2
     goto    hGRDRC_clockMapLoop
+    
+    movlw   0x86                        ; put 134 into the 16 clock position
+    movwi   -.32[FSR0]
     
     ;//WIP HSS// end
 
