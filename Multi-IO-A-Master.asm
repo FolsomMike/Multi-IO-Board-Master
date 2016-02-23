@@ -1316,9 +1316,9 @@ hGRDRC_checkSumGood:
     movf    i2cRcvBuf+.1, W             ; lower byte of max
     movwi   FSR0++
     
-    //WIP HSS// -- clock map should be handled right here instead of skipped over
+    ;//WIP HSS// -- clock map should be handled right here instead of skipped over
     addfsr  FSR0,.48                    ; skip over slave's clock map
-    //WIP HSS// end
+    ;//WIP HSS// end
     
     addfsr  FSR0,.1                     ; skip over the slave's checksum
 
@@ -1331,7 +1331,7 @@ hGRDRC_checkSumGood:
     decfsz  scratch2,F                  ; loop until all slaves queried
     goto    hGRDRC_loop
     
-    //WIP HSS// -- the clock map should be loaded properly instead of just 0s
+    ;//WIP HSS// -- the clock map should be loaded properly instead of just 0s
     
     movlw   .48                         ; clock map is 48 bytes
     movwf   scratch2
@@ -1345,7 +1345,7 @@ hGRDRC_clockMapLoop:
     decfsz  scratch2
     goto    hGRDRC_clockMapLoop
     
-    //WIP HSS// end
+    ;//WIP HSS// end
 
     movlw   .81                         ; number of data bytes in packet which are checksummed
     movwf   scratch0                    ; (includes command -- see notes at top of function)
