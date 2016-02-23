@@ -1312,17 +1312,13 @@ hGRDRC_checkSumGood:
     movwi   FSR0++
 
     banksel i2cRcvBuf                   ; load slave's overall max A/D into serial transmit buffer
-    movf    i2cRcvBuf, W                ; upper byte of max
+    movf    i2cRcvBuf+.2, W             ; upper byte of max
     movwi   FSR0++
-    movf    i2cRcvBuf+.1, W             ; lower byte of max
+    movf    i2cRcvBuf+.3, W             ; lower byte of max
     movwi   FSR0++
     
     ;//WIP HSS// -- clock map should be handled right here instead of skipped over
-    addfsr  FSR0,.31                    ; skip over slave's clock map (+48)
-    addfsr  FSR0,.17                    ; addfsr instruction can only handle -32 to 31
     ;//WIP HSS// end
-    
-    addfsr  FSR0,.1                     ; skip over the slave's checksum
 
     banksel serialXmtBufPtrH            ; store updated pointer
     movf    FSR0H,W
