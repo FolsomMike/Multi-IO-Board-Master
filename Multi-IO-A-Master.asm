@@ -516,6 +516,8 @@ NUM_SLAVES EQU 0x08              ; number of Slave PICs on the I2C bus
     hiCurrentLimitPot       ; value for digital pot which sets the high current limit value
     loCurrentLimitPot       ; value for digital pot which sets the high current limit value
     powerLevel              ; store the power level of the high/low current values in use
+    
+    runDataPktCount         ; store the number of times run data pkt has been sent
 
     scratch0                ; these can be used by any function
     scratch1
@@ -1217,24 +1219,27 @@ setUpSerialXmtBuffer:
 ;
 ; Number of bytes to be checksummed (passed to calcAndStoreCheckSumSerPrtXmtBuf):
 ;
+;   01 bytes from this Master PIC   ~ run data packet count
 ;   16 bytes for overall mins       ~ 02 data bytes per slave * 8 slaves = 32 data bytes
 ;   16 bytes for overall maxs       ~ 02 data bytes per slave * 8 slaves = 32 data bytes
 ;   48 bytes from this Master PIC   ~ clock map
 ;   01 bytes from this Master PIC   ~ command byte
 ;   ---
-;   81 bytes total
+;   82 bytes total
 ;
 ; Number of bytes including checksum (passed to setUpSerialXmtBuffer):
 ;
+;   01 bytes from this Master PIC   ~ run data packet count
 ;   32 bytes from slave PICs        ~ 04 data bytes per slave * 8 slaves = 32 data bytes
 ;   48 bytes from this Master PIC   ~ clock map
 ;   01 bytes from this Master PIC   ~ command byte
 ;   01 bytes from this Master PIC   ~ check sum byte
 ;   ---
-;   82 bytes total
+;   83 bytes total
 ;
 ; Number of bytes including checksum, header, and length (passed to startSerialPortTransmit):
 ;
+;   01 bytes from this Master PIC   ~ run data packet count
 ;   32 bytes from slave PICs        ~ 04 data bytes per slave * 8 slaves = 32 data bytes
 ;   48 bytes from this Master PIC   ~ clock map
 ;   01 bytes from this Master PIC   ~ command byte
@@ -1242,7 +1247,7 @@ setUpSerialXmtBuffer:
 ;   02 bytes from this Master PIC   ~ header bytes
 ;   01 bytes from this Master PIC   ~ length byte
 ;   ---
-;   85 bytes total
+;   86 bytes total
 ;
 ;
 
@@ -1250,13 +1255,17 @@ handleGetRunDataRbtCmd:
 
     banksel scratch0
     
-    movlw   .82                         ; setup serial port xmt buffer for proper number of bytes
+    movlw   .83                         ; setup serial port xmt buffer for proper number of bytes
     movwf   scratch0                    ; (includes checksum and command -- see top of function)
 
     movlw   RBT_GET_RUN_DATA_CMD        ; command byte for the serial xmt packet
     movwf   scratch1
 
     call    setUpSerialXmtBuffer
+    
+    movf    runDataPktCount,W           ; store the number of times the run data has been sent from
+    movwi   FSR0++                      ; this Master PIC
+    incf    runDataPktCount,F           ; increment for next time
     
     banksel serialXmtBufPtrH            ; store updated pointer
     movf    FSR0H,W
@@ -1348,11 +1357,11 @@ hGRDRC_clockMapLoop:
     
     ;//WIP HSS// end
 
-    movlw   .81                         ; number of data bytes in packet which are checksummed
+    movlw   .82                         ; number of data bytes in packet which are checksummed
     movwf   scratch0                    ; (includes command -- see notes at top of function)
     call    calcAndStoreCheckSumSerPrtXmtBuf
 
-    movlw   .85                         ; number of bytes to send to Rabbit (includes header,
+    movlw   .86                         ; number of bytes to send to Rabbit (includes header,
                                         ; length, command, and checksum -- see top of function)
 
     call    startSerialPortTransmit
@@ -1380,6 +1389,7 @@ setup:
     clrf    statusFlags
     clrf    serialPortErrorCnt
     clrf    slaveI2CErrorCnt
+    clrf    runDataPktCount
 
     call    setupClock      ; set system clock source and frequency
 
