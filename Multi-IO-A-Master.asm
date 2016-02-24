@@ -1314,16 +1314,16 @@ hGRDRC_checkSumGood:
     movf    serialXmtBufPtrL, W
     movwf   FSR0L
 
-    banksel i2cRcvBuf                   ; load slave's overall min A/D into serial transmit buffer
-    movf    i2cRcvBuf, W                ; upper byte of min
+    banksel i2cRcvBuf                   ; load slave's overall max A/D into serial transmit buffer
+    movf    i2cRcvBuf, W                ; upper byte of max
     movwi   FSR0++
-    movf    i2cRcvBuf+.1, W             ; lower byte of min
+    movf    i2cRcvBuf+.1, W             ; lower byte of max
     movwi   FSR0++
 
-    banksel i2cRcvBuf                   ; load slave's overall max A/D into serial transmit buffer
-    movf    i2cRcvBuf+.2, W             ; upper byte of max
+    banksel i2cRcvBuf                   ; load slave's overall min A/D into serial transmit buffer
+    movf    i2cRcvBuf+.2, W             ; upper byte of min
     movwi   FSR0++
-    movf    i2cRcvBuf+.3, W             ; lower byte of max
+    movf    i2cRcvBuf+.3, W             ; lower byte of min
     movwi   FSR0++
     
     ;//WIP HSS// -- clock map should be handled right here instead of skipped over
