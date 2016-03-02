@@ -588,11 +588,14 @@ NUM_SLAVES EQU 0x08              ; number of Slave PICs on the I2C bus
     serialXmtBuf:SERIAL_XMT_BUF_LEN
 
  endc
- 
+   
 ; Compute address of serialXmtBuf in linear data memory for use as a large buffer
-SERIAL_XMT_BUF_LINEAR_ADDRESS   EQU ((serialXmtBuf/.128)*.80)+0x2000
+XMT_BUF_OFFSET                  EQU (serialXmtBuf & 0x7f) - 0x20
+SERIAL_XMT_BUF_LINEAR_ADDRESS   EQU ((serialXmtBuf/.128)*.80)+0x2000+XMT_BUF_OFFSET
 SERIAL_XMT_BUF_LINEAR_LOC_H     EQU high SERIAL_XMT_BUF_LINEAR_ADDRESS
 SERIAL_XMT_BUF_LINEAR_LOC_L     EQU low SERIAL_XMT_BUF_LINEAR_ADDRESS
+
+
 
 ;-----------------
 ; Define variables in the memory which is mirrored in all RAM banks.
