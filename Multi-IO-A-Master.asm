@@ -884,8 +884,6 @@ hGALADVRCCheckSumGood:
 
     goto    resetSerialPortReceiveBuffer
 
-    return
-
 ; end of handleGetAllLastADValuesRbtCmd
 ;--------------------------------------------------------------------------------------------------
 
@@ -897,6 +895,34 @@ hGALADVRCCheckSumGood:
 ; data from the Master as retrieved from each of the Slaves.
 ;
 ; See Device.handleAllStatusPacket method in Java host code for details on packet structure.
+;
+; Number of bytes to be checksummed (passed to calcAndStoreCheckSumSerPrtXmtBuf):
+;
+;   01 bytes    Master PIC      ~ command byte
+;   09 bytes    Master PIC      ~ status
+;   88 bytes    Slave PICS      ~ 10 status databytes per slave + 1 checksum = 11 bytes * 8 slaves
+;   ---
+;   98 bytes    total
+;
+; Number of bytes including checksum (passed to setUpSerialXmtBuffer):
+;
+;   01 bytes    Master PIC      ~ command byte
+;   09 bytes    Master PIC      ~ status
+;   88 bytes    Slave PICS      ~ 10 status databytes per slave + 1 checksum = 11 bytes * 8 slaves
+;   01 bytes    Master PIC      ~ check sum
+;   ---
+;   99 bytes   total
+;
+; Number of bytes including checksum, header, and length (passed to startSerialPortTransmit):
+;
+;   02 bytes    Master PIC      ~ header
+;   01 bytes    Master PIC      ~ length
+;   01 bytes    Master PIC      ~ command byte
+;   09 bytes    Master PIC      ~ status
+;   88 bytes    Slave PICS      ~ 10 status databytes per slave + 1 checksum = 11 bytes * 8 slaves
+;   01 bytes    Master PIC      ~ check sum
+;   ---
+;   102 bytes   total
 ;
 
 handleAllStatusRbtCmd:
@@ -1055,25 +1081,6 @@ handleSetPotRbtCmd:
 ; Adds the header bytes, length byte, command byte, and various values from this Master PIC to the
 ; start of the serial port transmit buffer and sets serialXmtBufPtrH:L ready to add data bytes.
 ;
-; Notes on packet length:
-;
-;   10 data bytes from this Master PIC (includes the command byte)
-;   96 bytes from Slave PICS ~ 11 data bytes + 1 checksum byte = 12 bytes per Slave PIC * 8 slaves
-;   ---
-;   106 total (value passed to calcAndStoreCheckSumSerPrtXmtBuf; number bytes checksummed)
-;
-;   ADD (to determine length byte to insert into packet)
-;
-;   1 checksum byte for the overall packet
-;   107 total (value passed to setUpSerialXmtBuffer (this function) for packet length)
-;
-;   ADD (to determine actual number of bytes to send to Rabbit)
-;
-;   2 header bytes
-;   1 length byte
-;   ---
-;   110 total (value passed to startSerialPortTransmit in function handleAllStatusRbtCmd)
-;
 ; On Entry:
 ;
 ; usartScratch0 should contain the number of data bytes plus one for the checksum byte in the packet
@@ -1089,7 +1096,7 @@ setUpSerXmtBufForRbtAllStatusCmd:
     banksel flags
 
     movlw   .99                         ; setup serial port xmt buffer for proper number of bytes
-    movwf   scratch0                    ; (see notes at top of this function for details)
+    movwf   scratch0                    ; (see notes at top of handleAllStatusRbtCmd for details)
 
     movlw   RBT_GET_ALL_STATUS          ; command byte for the xmt packet
     movwf   scratch1
