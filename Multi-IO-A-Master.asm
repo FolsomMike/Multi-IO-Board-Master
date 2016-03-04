@@ -876,14 +876,14 @@ hGALADVRCCheckSumGood:
     movlw   .25                         ; number of data bytes in packet which are checksummed
     movwf   scratch0
     call    calcAndStoreCheckSumSerPrtXmtBuf
-
+    
     movlw   .29                         ; number of bytes to send to Rabbit (see notes at top of 
                                         ; function for info)
 
     call    startSerialPortTransmit
 
     goto    resetSerialPortReceiveBuffer
-    
+
     return
 
 ; end of handleGetAllLastADValuesRbtCmd
@@ -914,8 +914,8 @@ hASRCLoop:
     sublw   NUM_SLAVES                  ; compute next slave address
     movwf   scratch0                    ; store Slave PIC address
 
-    movlw   .12                         ; number of bytes expected in return packet
-    movwf   scratch1
+    movlw   .11                         ; number of bytes expected in return packet, includes 
+    movwf   scratch1                    ; checksum
 
     movlw   PIC_GET_ALL_STATUS_CMD      ; command to slaves
 
@@ -924,9 +924,9 @@ hASRCLoop:
     ; validate the checksum of the received packet
 
     banksel scratch0
-    movlw   .12                         ; number of data bytes plus checksum in packet
+    movlw   .11                         ; number of data bytes plus checksum in packet
     movwf   scratch0
-    addfsr  FSR0,-.12                   ; move pointer to first byte in packet
+    addfsr  FSR0,-.11                   ; move pointer to first byte in packet
 
     call    sumSeries                   ; sum all data bytes along with the checksum ending byte
     btfsc   STATUS,Z
@@ -964,10 +964,10 @@ hASRCCheckSumGood:
     movf    i2cRcvBuf+.5, W             ; slave's communication error count
     movwi   FSR0++
 
-    movf    i2cRcvBuf+.6, W             ; slave's max A/D buffer byte count
+    movf    i2cRcvBuf+.6, W             ; slave's last A/D sample
     movwi   FSR0++
 
-    movf    i2cRcvBuf+.7, W             ; slave's A/D value
+    movf    i2cRcvBuf+.7, W             ; unused -- for future use
     movwi   FSR0++
 
     movf    i2cRcvBuf+.8, W             ; unused -- for future use
@@ -976,10 +976,7 @@ hASRCCheckSumGood:
     movf    i2cRcvBuf+.9, W             ; unused -- for future use
     movwi   FSR0++
 
-    movf    i2cRcvBuf+.10, W             ; unused -- for future use
-    movwi   FSR0++
-
-    movf    i2cRcvBuf+.11, W             ; slave's packet checksum
+    movf    i2cRcvBuf+.10, W            ; slave's packet checksum
     movwi   FSR0++
 
     banksel flags
@@ -992,11 +989,11 @@ hASRCCheckSumGood:
     decfsz  scratch2, F                 ; loop until all slaves queried
     goto    hASRCLoop
 
-    movlw   .106                        ; number of data bytes in packet which are checksummed
+    movlw   .98                         ; number of data bytes in packet which are checksummed
     movwf   scratch0
     call    calcAndStoreCheckSumSerPrtXmtBuf
 
-    movlw   .110                        ; number of bytes to send to Rabbit (see notes at the top
+    movlw   .102                        ; number of bytes to send to Rabbit (see notes at the top
                                         ; of function setUpSerXmtBufForRbtAllStatusCmd for info)
 
     call    startSerialPortTransmit
@@ -1091,7 +1088,7 @@ setUpSerXmtBufForRbtAllStatusCmd:
 
     banksel flags
 
-    movlw   .107                        ; setup serial port xmt buffer for proper number of bytes
+    movlw   .99                         ; setup serial port xmt buffer for proper number of bytes
     movwf   scratch0                    ; (see notes at top of this function for details)
 
     movlw   RBT_GET_ALL_STATUS          ; command byte for the xmt packet
