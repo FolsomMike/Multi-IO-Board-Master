@@ -1677,7 +1677,8 @@ setupSerialPort:
     ; for interrupts to occur, INTCON/PEIE and INTCON/GIE must be enabled also
 
     banksel PIE1
-    bsf     PIE1, RCIE      ; enable receive interrupts
+    bsf     PIE1,RCIE       ; enable receive interrupts
+    bcf     PIE1,TXIE       ; disable transmit interrupts (re-enabled when data is ready to xmt)
 
     return
 
