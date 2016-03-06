@@ -886,7 +886,7 @@ hGALADVRCCheckSumGood:
 
 ; end of handleGetAllLastADValuesRbtCmd
 ;--------------------------------------------------------------------------------------------------
-
+    
 ;--------------------------------------------------------------------------------------------------
 ; handleAllStatusRbtCmd
 ;
@@ -1226,35 +1226,34 @@ setUpSerialXmtBuffer:
 ;
 ; Number of bytes to be checksummed (passed to calcAndStoreCheckSumSerPrtXmtBuf):
 ;
-;   01 bytes from this Master PIC   ~ run data packet count
-;   16 bytes for overall mins       ~ 02 data bytes per slave * 8 slaves = 32 data bytes
-;   16 bytes for overall maxs       ~ 02 data bytes per slave * 8 slaves = 32 data bytes
-;   48 bytes from this Master PIC   ~ clock map
-;   01 bytes from this Master PIC   ~ command byte
+;   01 bytes    Master PIC      ~ command byte
+;   01 bytes    Master PIC      ~ number of times rundata pkt has been sent
+;   32 bytes    Slave PICs      ~ mins & maxs ~ 4 databytes per slave * 8 slaves = 32 data bytes
+;   48 bytes    Master PIC      ~ greatest clock map values of all slaves (determined by Master)
 ;   ---
-;   82 bytes total
+;   82 bytes    total
 ;
 ; Number of bytes including checksum (passed to setUpSerialXmtBuffer):
 ;
-;   01 bytes from this Master PIC   ~ run data packet count
-;   32 bytes from slave PICs        ~ 04 data bytes per slave * 8 slaves = 32 data bytes
-;   48 bytes from this Master PIC   ~ clock map
-;   01 bytes from this Master PIC   ~ command byte
-;   01 bytes from this Master PIC   ~ check sum byte
+;   01 bytes    Master PIC      ~ command byte
+;   01 bytes    Master PIC      ~ number of times rundata pkt has been sent
+;   32 bytes    Slave PICs      ~ mins & maxs ~ 4 databytes per slave * 8 slaves = 32 data bytes
+;   48 bytes    Master PIC      ~ greatest clock map values of all slaves (determined by Master)
+;   01 bytes    Master PIC      ~ checksum
 ;   ---
-;   83 bytes total
+;   83 bytes    total
 ;
 ; Number of bytes including checksum, header, and length (passed to startSerialPortTransmit):
 ;
-;   01 bytes from this Master PIC   ~ run data packet count
-;   32 bytes from slave PICs        ~ 04 data bytes per slave * 8 slaves = 32 data bytes
-;   48 bytes from this Master PIC   ~ clock map
-;   01 bytes from this Master PIC   ~ command byte
-;   01 bytes from this Master PIC   ~ check sum byte
-;   02 bytes from this Master PIC   ~ header bytes
-;   01 bytes from this Master PIC   ~ length byte
+;   02 bytes    Master PIC      ~ header
+;   01 bytes    Master PIC      ~ length
+;   01 bytes    Master PIC      ~ command byte
+;   01 bytes    Master PIC      ~ number of times rundata pkt has been sent
+;   32 bytes    Slave PICs      ~ mins & maxs ~ 4 databytes per slave * 8 slaves = 32 data bytes
+;   48 bytes    Master PIC      ~ greatest clock map values of all slaves (determined by Master)
+;   01 bytes    Master PIC      ~ checksum
 ;   ---
-;   86 bytes total
+;   86 bytes    total
 ;
 ;
 
@@ -1322,18 +1321,22 @@ hGRDRC_checkSumGood:
     movwf   FSR0L
 
     banksel i2cRcvBuf                   ; load slave's overall max A/D into serial transmit buffer
-    movf    i2cRcvBuf, W                ; upper byte of max
+    ;//DEBUG HSS//movf    i2cRcvBuf, W                ; upper byte of max
+    movlw   0x12    ;//DEBUG HSS//
     movwi   FSR0++
-    movf    i2cRcvBuf+.1, W             ; lower byte of max
+    ;//DEBUG HSS//movf    i2cRcvBuf+.1, W             ; lower byte of max
+    movlw   0x34    ;//DEBUG HSS//
     movwi   FSR0++
 
     banksel i2cRcvBuf                   ; load slave's overall min A/D into serial transmit buffer
-    movf    i2cRcvBuf+.2, W             ; upper byte of min
+    ;//DEBUG HSS//movf    i2cRcvBuf+.2, W             ; upper byte of min
+    movlw   0x56    ;//DEBUG HSS//
     movwi   FSR0++
-    movf    i2cRcvBuf+.3, W             ; lower byte of min
+    ;//DEBUG HSS//movf    i2cRcvBuf+.3, W             ; lower byte of min
+    movlw   0x78    ;//DEBUG HSS//
     movwi   FSR0++
     
-    ;//WIP HSS// -- clock map should be handled right here instead of skipped over
+    ;//WIP HSS// -- clock map and peak absolute should be handled right here instead of skipped over
     ;//WIP HSS// end
 
     banksel serialXmtBufPtrH            ; store updated pointer
@@ -1349,17 +1352,12 @@ hGRDRC_checkSumGood:
     
     movlw   .48                         ; clock map is 48 bytes
     movwf   scratch2
-    
-    movlw   0x7F
-    
+    movlw   .0
 hGRDRC_clockMapLoop:
-    
     movwi   FSR0++                      ; populate clock map with 0s
-    
     decfsz  scratch2
     goto    hGRDRC_clockMapLoop
-    
-    movlw   0x86                        ; put 134 into the 16 clock position
+    movlw   0x09                        ; put 09 into the 16 clock position
     movwi   -.32[FSR0]
     
     ;//WIP HSS// end
