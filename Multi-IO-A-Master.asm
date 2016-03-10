@@ -886,7 +886,7 @@ hGALADVRCCheckSumGood:
 
 ; end of handleGetAllLastADValuesRbtCmd
 ;--------------------------------------------------------------------------------------------------
-    
+
 ;--------------------------------------------------------------------------------------------------
 ; handleAllStatusRbtCmd
 ;
@@ -1219,41 +1219,36 @@ setUpSerialXmtBuffer:
 ; Handles the RBT_GET_RUN_DATA_CMD command by retrieving each slave's run data, processing the data,
 ; and then sending the processed data to the Rabbit.
 ;
-; Sent on to the rabbit:
-;   Each slave's min A\D value
-;   Each slave's max A\D value
-;   Clock map
-;
 ; Number of bytes to be checksummed (passed to calcAndStoreCheckSumSerPrtXmtBuf):
 ;
-;   01 bytes    Master PIC      ~ command byte
-;   01 bytes    Master PIC      ~ number of times rundata pkt has been sent
-;   32 bytes    Slave PICs      ~ mins & maxs ~ 4 databytes per slave * 8 slaves = 32 data bytes
-;   48 bytes    Master PIC      ~ greatest clock map values of all slaves (determined by Master)
+;   001 bytes   Master PIC      ~ command byte
+;   001 bytes   Master PIC      ~ number of times rundata pkt has been sent
+;   064 bytes   Slave PICs      ~ peaks, clks, locs ~ 8 bytes per slave * 8 slaves = 64 databytes
+;   048 bytes   Master PIC      ~ greatest clock map values of all slaves (determined by Master)
 ;   ---
-;   82 bytes    total
+;   114 bytes   total
 ;
 ; Number of bytes including checksum (passed to setUpSerialXmtBuffer):
 ;
-;   01 bytes    Master PIC      ~ command byte
-;   01 bytes    Master PIC      ~ number of times rundata pkt has been sent
-;   32 bytes    Slave PICs      ~ mins & maxs ~ 4 databytes per slave * 8 slaves = 32 data bytes
-;   48 bytes    Master PIC      ~ greatest clock map values of all slaves (determined by Master)
-;   01 bytes    Master PIC      ~ checksum
+;   001 bytes   Master PIC      ~ command byte
+;   001 bytes   Master PIC      ~ number of times rundata pkt has been sent
+;   064 bytes   Slave PICs      ~ peaks, clks, locs ~ 8 bytes per slave * 8 slaves = 64 databytes
+;   048 bytes   Master PIC      ~ greatest clock map values of all slaves (determined by Master)
+;   001 bytes   Master PIC      ~ checksum
 ;   ---
-;   83 bytes    total
+;   115 bytes   total
 ;
 ; Number of bytes including checksum, header, and length (passed to startSerialPortTransmit):
 ;
-;   02 bytes    Master PIC      ~ header
-;   01 bytes    Master PIC      ~ length
-;   01 bytes    Master PIC      ~ command byte
-;   01 bytes    Master PIC      ~ number of times rundata pkt has been sent
-;   32 bytes    Slave PICs      ~ mins & maxs ~ 4 databytes per slave * 8 slaves = 32 data bytes
-;   48 bytes    Master PIC      ~ greatest clock map values of all slaves (determined by Master)
-;   01 bytes    Master PIC      ~ checksum
+;   002 bytes   Master PIC      ~ header
+;   001 bytes   Master PIC      ~ length
+;   001 bytes   Master PIC      ~ command byte
+;   001 bytes   Master PIC      ~ number of times rundata pkt has been sent
+;   064 bytes   Slave PICs      ~ peaks, clks, locs ~ 8 bytes per slave * 8 slaves = 64 databytes
+;   048 bytes   Master PIC      ~ greatest clock map values of all slaves (determined by Master)
+;   001 bytes   Master PIC      ~ checksum
 ;   ---
-;   86 bytes    total
+;   118 bytes    total
 ;
 ;
 
@@ -1261,7 +1256,7 @@ handleGetRunDataRbtCmd:
 
     banksel scratch0
     
-    movlw   .83                         ; setup serial port xmt buffer for proper number of bytes
+    movlw   .115                        ; setup serial port xmt buffer for proper number of bytes
     movwf   scratch0                    ; (includes checksum and command -- see top of function)
 
     movlw   RBT_GET_RUN_DATA_CMD        ; command byte for the serial xmt packet
@@ -1289,7 +1284,7 @@ hGRDRC_loop:
     sublw   NUM_SLAVES                  ; compute next slave address
     movwf   scratch0                    ; store Slave PIC address
 
-    movlw   .53                         ; number of bytes expected in return packet
+    movlw   .58                         ; number of bytes expected in return packet
     movwf   scratch1                    ; (includes checksum)
 
     movlw   PIC_GET_RUN_DATA_CMD        ; command to slaves
@@ -1299,10 +1294,10 @@ hGRDRC_loop:
     ; validate the checksum of the received packet
 
     banksel scratch0
-    movlw   .53                         ; number of data bytes including checksum in slave packet
+    movlw   .58                         ; number of data bytes including checksum in slave packet
     movwf   scratch0
-    addfsr  FSR0,-.32                   ; move pointer to first byte in packet (-53)
-    addfsr  FSR0,-.21                   ; addfsr instruction can only handle -32 to 31
+    addfsr  FSR0,-.32                   ; move pointer to first byte in packet (-58)
+    addfsr  FSR0,-.26                   ; addfsr instruction can only handle -32 to 31
 
     call    sumSeries                   ; sum all data bytes along with the checksum ending byte
     btfsc   STATUS,Z
@@ -1362,11 +1357,11 @@ hGRDRC_clockMapLoop:
     
     ;//WIP HSS// end
 
-    movlw   .82                         ; number of data bytes in packet which are checksummed
+    movlw   .114                        ; number of data bytes in packet which are checksummed
     movwf   scratch0                    ; (includes command -- see notes at top of function)
     call    calcAndStoreCheckSumSerPrtXmtBuf
 
-    movlw   .86                         ; number of bytes to send to Rabbit (includes header,
+    movlw   .118                        ; number of bytes to send to Rabbit (includes header,
                                         ; length, command, and checksum -- see top of function)
 
     call    startSerialPortTransmit
