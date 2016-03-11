@@ -284,6 +284,7 @@ PIC_GET_RUN_DATA_CMD            EQU .4
 PIC_ENABLE_POT_CMD              EQU .5
 PIC_DISABLE_POT_CMD             EQU .6
 PIC_GET_LAST_AD_VALUE_CMD       EQU .7
+PIC_SET_ONOFF_CMD               EQU .8
 
 ; end of Defines
 ;--------------------------------------------------------------------------------------------------
@@ -759,10 +760,54 @@ parseCommandFromSerialPacket:
     sublw   RBT_GET_RUN_DATA_CMD
     btfsc   STATUS,Z
     goto    handleGetRunDataRbtCmd
+    
+    movf    INDF0, W
+    sublw   RBT_SET_ONOFF_CMD
+    btfsc   STATUS,Z
+    goto    handleSetChannelOnOffRbtCmd
 
     goto    resetSerialPortReceiveBuffer
 
 ; end of parseCommandFromSerialPacket
+;--------------------------------------------------------------------------------------------------
+    
+;--------------------------------------------------------------------------------------------------
+; handleSetChannelOnOffRbtCmd
+;
+; Handles the RBT_GET_ALL_AD_VALUES_CMD command by retrieving the last AD value from each of the
+; slave PICs and then sending the collection of values to the Rabbit.
+;
+; //WIP HSS// -- describe this stuff
+;
+
+handleSetChannelOnOffRbtCmd:
+    
+    movlw   high i2cXmtBuf                  ; point FSR0 at start of xmt buffer
+    movwf   FSR0H
+    movlw   low i2cXmtBuf
+    movwf   FSR0L
+    
+    movlw   high i2cXmtBufNumBytes          ; point FSR1 at numBytes variable
+    movwf   FSR1H
+    movlw   low i2cXmtBufNumBytes
+    movwf   FSR1L
+    
+    movlw   0x02                            ; sending 2 bytes on I2C bus
+    movwf   INDF1
+    
+    banksel serialRcvBuf
+    
+    movlw   PIC_SET_ONOFF_CMD               ; put command to slave in xmt buffer
+    movwf   INDF0
+    movf    serialRcvBuf+2,W                ; put On/Off byte in xmt buffer
+    movwi   1[FSR0]
+    movf    serialRcvBuf+1,W                ; put Slave I2C address into W
+
+    call    sendBytesToSlavePICViaI2C       ; send bytes
+    
+    goto    resetSerialPortReceiveBuffer
+    
+; end of handleSetChannelOnOffRbtCmd
 ;--------------------------------------------------------------------------------------------------
     
 ;--------------------------------------------------------------------------------------------------
@@ -1223,20 +1268,20 @@ setUpSerialXmtBuffer:
 ;
 ;   001 bytes   Master PIC      ~ command byte
 ;   001 bytes   Master PIC      ~ number of times rundata pkt has been sent
-;   064 bytes   Slave PICs      ~ peaks, clks, locs ~ 8 bytes per slave * 8 slaves = 64 databytes
+;   032 bytes   Slave PICs      ~ peaks ~ 4 bytes per slave * 8 slaves = 32 databytes
 ;   048 bytes   Master PIC      ~ greatest clock map values of all slaves (determined by Master)
 ;   ---
-;   114 bytes   total
+;   082 bytes   total
 ;
 ; Number of bytes including checksum (passed to setUpSerialXmtBuffer):
 ;
 ;   001 bytes   Master PIC      ~ command byte
 ;   001 bytes   Master PIC      ~ number of times rundata pkt has been sent
-;   064 bytes   Slave PICs      ~ peaks, clks, locs ~ 8 bytes per slave * 8 slaves = 64 databytes
+;   032 bytes   Slave PICs      ~ peaks ~ 4 bytes per slave * 8 slaves = 32 databytes
 ;   048 bytes   Master PIC      ~ greatest clock map values of all slaves (determined by Master)
 ;   001 bytes   Master PIC      ~ checksum
 ;   ---
-;   115 bytes   total
+;   083 bytes   total
 ;
 ; Number of bytes including checksum, header, and length (passed to startSerialPortTransmit):
 ;
@@ -1244,11 +1289,11 @@ setUpSerialXmtBuffer:
 ;   001 bytes   Master PIC      ~ length
 ;   001 bytes   Master PIC      ~ command byte
 ;   001 bytes   Master PIC      ~ number of times rundata pkt has been sent
-;   064 bytes   Slave PICs      ~ peaks, clks, locs ~ 8 bytes per slave * 8 slaves = 64 databytes
+;   032 bytes   Slave PICs      ~ peaks ~ 4 bytes per slave * 8 slaves = 32 databytes
 ;   048 bytes   Master PIC      ~ greatest clock map values of all slaves (determined by Master)
 ;   001 bytes   Master PIC      ~ checksum
 ;   ---
-;   118 bytes    total
+;   086 bytes    total
 ;
 ;
 
@@ -1256,7 +1301,7 @@ handleGetRunDataRbtCmd:
 
     banksel scratch0
     
-    movlw   .115                        ; setup serial port xmt buffer for proper number of bytes
+    movlw   .83                         ; setup serial port xmt buffer for proper number of bytes
     movwf   scratch0                    ; (includes checksum and command -- see top of function)
 
     movlw   RBT_GET_RUN_DATA_CMD        ; command byte for the serial xmt packet
@@ -1357,11 +1402,11 @@ hGRDRC_clockMapLoop:
     
     ;//WIP HSS// end
 
-    movlw   .114                        ; number of data bytes in packet which are checksummed
+    movlw   .82                         ; number of data bytes in packet which are checksummed
     movwf   scratch0                    ; (includes command -- see notes at top of function)
     call    calcAndStoreCheckSumSerPrtXmtBuf
 
-    movlw   .118                        ; number of bytes to send to Rabbit (includes header,
+    movlw   .86                         ; number of bytes to send to Rabbit (includes header,
                                         ; length, command, and checksum -- see top of function)
 
     call    startSerialPortTransmit
