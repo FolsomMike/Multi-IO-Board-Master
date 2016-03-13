@@ -285,6 +285,7 @@ PIC_ENABLE_POT_CMD              EQU .5
 PIC_DISABLE_POT_CMD             EQU .6
 PIC_GET_LAST_AD_VALUE_CMD       EQU .7
 PIC_SET_ONOFF_CMD               EQU .8
+PIC_GET_SNAPSHOT_CMD            EQU .9
 
 ; end of Defines
 ;--------------------------------------------------------------------------------------------------
@@ -442,13 +443,16 @@ SLV_COM_ERROR       EQU 1
 SERIAL_RCV_BUF_LEN  EQU .20
 
 
-SERIAL_XMT_BUF_LEN  EQU .161        ; NOTE: This buffer is larger than the 80 block bytes of RAM
+SERIAL_XMT_BUF_LEN  EQU .240        ; NOTE: This buffer is larger than the 80 block bytes of RAM
                                     ; in each block, so it is generally accessed using an Indirect
                                     ; Register in the Linear Addressing space.
 
 I2C_RCV_BUF_LEN      EQU .31
 
 I2C_XMT_BUF_LEN      EQU .31
+      
+MAP_BUF_LEN         EQU .48
+SNAPSHOT_BUF_LEN    EQU .128        ; NOTE: Must match length in Slave PICs!
 
 NUM_SLAVES EQU 0x08              ; number of Slave PICs on the I2C bus
 
@@ -463,10 +467,10 @@ NUM_SLAVES EQU 0x08              ; number of Slave PICs on the I2C bus
 ; commonly used to reserve RAM space or Code space when producing "absolute" code, as is done here.
 ; 
 
-; Assign variables in RAM - Bank 0 - must set BSR to 0 to access
-; Bank 0 has 80 bytes of free space
+;--------------------------------------------------------------------------
+; Bank 00 - 80 bytes of free space
 
- cblock 0x20                ; starting address
+ cblock 0x020               ; starting address
 
     flags                   ; bit 0: 0 = 
                             ; bit 1: 0 = 
@@ -538,12 +542,13 @@ NUM_SLAVES EQU 0x08              ; number of Slave PICs on the I2C bus
 
  endc
 
-;-----------------
+; end Bank 00
+;--------------------------------------------------------------------------
 
-; Assign variables in RAM - Bank 1 - must set BSR to 1 to access
-; Bank 1 has 80 bytes of free space
+;--------------------------------------------------------------------------
+; Bank 01 - 80 bytes of free space
 
- cblock 0xa0                ; starting address
+ cblock 0x0a0               ; starting address
 
     flagsA0                 ; bit 0: 0 =
                             ; bit 1: 0 = 
@@ -566,11 +571,81 @@ NUM_SLAVES EQU 0x08              ; number of Slave PICs on the I2C bus
 
  endc
 
-;-----------------
+; end Bank 01
+;--------------------------------------------------------------------------
+ 
+;--------------------------------------------------------------------------
+; Bank 02 - 80 bytes of free space
 
-; Assign large buffer in RAM - Bank 9~11 - must set BSR to 9~11 to access
-;
-; Banks 9~11 have 80 bytes of free space each
+ cblock 0x180               ; starting address
+
+ endc
+  
+; end Bank 02
+;--------------------------------------------------------------------------
+ 
+;--------------------------------------------------------------------------
+; Bank 03 - 80 bytes of free space
+  
+ cblock 0x1a0               ; starting address
+ 
+ endc
+  
+; end Bank 03
+;--------------------------------------------------------------------------
+ 
+;--------------------------------------------------------------------------
+; Bank 04 - 80 bytes of free space
+
+ cblock 0x220               ; starting address
+
+ endc
+ 
+; end Bank 04
+;--------------------------------------------------------------------------
+ 
+;--------------------------------------------------------------------------
+; Bank 05 - 80 bytes of free space
+
+ cblock 0x2a0               ; starting address
+
+ endc
+  
+; end Bank 05
+;--------------------------------------------------------------------------
+ 
+;--------------------------------------------------------------------------
+; Bank 06 - 80 bytes of free space
+
+ cblock 0x320               ; starting address
+
+ endc
+ 
+; end Bank 06
+;--------------------------------------------------------------------------
+ 
+;--------------------------------------------------------------------------
+; Bank 07 - 80 bytes of free space
+  
+ cblock 0x3a0               ; starting address
+  
+ endc
+  
+; end Bank 07
+;--------------------------------------------------------------------------
+ 
+;--------------------------------------------------------------------------
+; Bank 08 - 80 bytes of free space
+
+ cblock 0x420               ; starting address
+
+ endc
+
+; end Bank 08
+;--------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------
+; Bank 09 ~ Bank 11 - 240 bytes of free space - serial xmt buffer
 ;
 ; This is the serial port transmit buffer and is meant to be addressed via Indirect Register using
 ; linear memory mapping space so that the large buffer can be accommodated. The linear map starts
@@ -595,29 +670,34 @@ XMT_BUF_OFFSET                  EQU (serialXmtBuf & 0x7f) - 0x20
 SERIAL_XMT_BUF_LINEAR_ADDRESS   EQU ((serialXmtBuf/.128)*.80)+0x2000+XMT_BUF_OFFSET
 SERIAL_XMT_BUF_LINEAR_LOC_H     EQU high SERIAL_XMT_BUF_LINEAR_ADDRESS
 SERIAL_XMT_BUF_LINEAR_LOC_L     EQU low SERIAL_XMT_BUF_LINEAR_ADDRESS
+     
+; end Bank 09 ~ Bank 11
+;--------------------------------------------------------------------------
+     
+;--------------------------------------------------------------------------
+; Bank 12 - 48 bytes of free space - Clockmap
 
-
-
-;-----------------
-; Define variables in the memory which is mirrored in all RAM banks.
-;
-; On older PICs, this section was used to store context registers during an interrupt as the
-; current bank was unknown upon entering the interrupt. Now, the section can be used for any
-; purpose as the more powerful PICs automatically save the context on interrupt.
-;
-;	Bank 0		Bank 1		Bank 2		Bank3
-;	70h-7fh		f0h-ffh		170h-17fh	1f0h-1ffh
-;
-
-    cblock	0x70
-
+ cblock 0x620                ; starting address
  
-    endc
+    clockMap:MAP_BUF_LEN
 
-;-----------------
+ endc
 
-; end of Variables in RAM
-;--------------------------------------------------------------------------------------------------
+; end Bank 12
+;--------------------------------------------------------------------------
+
+;--------------------------------------------------------------------------
+; Common Ram mirrored in all banks - 16 bytes of free space
+
+ cblock	0x070
+    
+    peakADAbsolute      ; greatest absolute peak received from Slave PICs
+    slaveWithPeak       ; Slave PIC that returned the greatest absolute peak
+ 
+ endc
+    
+; end Common Ram
+;--------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
 ; Power On and Reset Vectors
@@ -1270,8 +1350,9 @@ setUpSerialXmtBuffer:
 ;   001 bytes   Master PIC      ~ number of times rundata pkt has been sent
 ;   032 bytes   Slave PICs      ~ peaks ~ 4 bytes per slave * 8 slaves = 32 databytes
 ;   048 bytes   Master PIC      ~ greatest clock map values of all slaves (determined by Master)
+;   128 bytes   Master PIC      ~ greatest snapshot buffer of all slaves (determined by Master)
 ;   ---
-;   082 bytes   total
+;   210 bytes   total
 ;
 ; Number of bytes including checksum (passed to setUpSerialXmtBuffer):
 ;
@@ -1279,9 +1360,10 @@ setUpSerialXmtBuffer:
 ;   001 bytes   Master PIC      ~ number of times rundata pkt has been sent
 ;   032 bytes   Slave PICs      ~ peaks ~ 4 bytes per slave * 8 slaves = 32 databytes
 ;   048 bytes   Master PIC      ~ greatest clock map values of all slaves (determined by Master)
+;   128 bytes   Master PIC      ~ greatest snapshot buffer of all slaves (determined by Master)
 ;   001 bytes   Master PIC      ~ checksum
 ;   ---
-;   083 bytes   total
+;   211 bytes   total
 ;
 ; Number of bytes including checksum, header, and length (passed to startSerialPortTransmit):
 ;
@@ -1291,9 +1373,10 @@ setUpSerialXmtBuffer:
 ;   001 bytes   Master PIC      ~ number of times rundata pkt has been sent
 ;   032 bytes   Slave PICs      ~ peaks ~ 4 bytes per slave * 8 slaves = 32 databytes
 ;   048 bytes   Master PIC      ~ greatest clock map values of all slaves (determined by Master)
+;   128 bytes   Master PIC      ~ greatest snapshot buffer of all slaves (determined by Master)
 ;   001 bytes   Master PIC      ~ checksum
 ;   ---
-;   086 bytes    total
+;   214 bytes    total
 ;
 ;
 
@@ -1301,7 +1384,7 @@ handleGetRunDataRbtCmd:
 
     banksel scratch0
     
-    movlw   .83                         ; setup serial port xmt buffer for proper number of bytes
+    movlw   .211                        ; setup serial port xmt buffer for proper number of bytes
     movwf   scratch0                    ; (includes checksum and command -- see top of function)
 
     movlw   RBT_GET_RUN_DATA_CMD        ; command byte for the serial xmt packet
@@ -1318,6 +1401,8 @@ handleGetRunDataRbtCmd:
     movwf   serialXmtBufPtrH
     movf    FSR0L,W
     movwf   serialXmtBufPtrL
+    
+    ; get and handle rundata packet from slaves
     
     banksel scratch2                    ; initialize slave counter
     movlw   NUM_SLAVES
@@ -1346,13 +1431,15 @@ hGRDRC_loop:
 
     call    sumSeries                   ; sum all data bytes along with the checksum ending byte
     btfsc   STATUS,Z
-    goto    hGRDRC_checkSumGood         ; sum was zero so checksum good
+    goto    hGRDRC_rundataCheckSumGood  ; sum was zero so checksum good
+    
+    ; end validate the checksum
 
     banksel flags                       ; flag and count the error, then transfer it anyway
     incf    slaveI2CErrorCnt,F
     bsf     statusFlags,SLV_COM_ERROR
 
-hGRDRC_checkSumGood:
+hGRDRC_rundataCheckSumGood:
 
     banksel serialXmtBufPtrH            ; point FSR0 at proper register of serial transmit buffer
     movf    serialXmtBufPtrH, W
@@ -1360,24 +1447,36 @@ hGRDRC_checkSumGood:
     movf    serialXmtBufPtrL, W
     movwf   FSR0L
 
-    banksel i2cRcvBuf                   ; load slave's overall max A/D into serial transmit buffer
-    ;//DEBUG HSS//movf    i2cRcvBuf, W                ; upper byte of max
-    movlw   0x12    ;//DEBUG HSS//
+    banksel i2cRcvBuf
+    
+    ; load slave's overall max A/D into serial transmit buffer
+    movf    i2cRcvBuf,W                 ; upper byte of max
     movwi   FSR0++
-    ;//DEBUG HSS//movf    i2cRcvBuf+.1, W             ; lower byte of max
-    movlw   0x34    ;//DEBUG HSS//
+    movf    i2cRcvBuf+.1,W              ; lower byte of max
     movwi   FSR0++
 
-    banksel i2cRcvBuf                   ; load slave's overall min A/D into serial transmit buffer
-    ;//DEBUG HSS//movf    i2cRcvBuf+.2, W             ; upper byte of min
-    movlw   0x56    ;//DEBUG HSS//
+    ; load slave's overall min A/D into serial transmit buffer
+    movf    i2cRcvBuf+.2,W              ; upper byte of min
     movwi   FSR0++
-    ;//DEBUG HSS//movf    i2cRcvBuf+.3, W             ; lower byte of min
-    movlw   0x78    ;//DEBUG HSS//
+    movf    i2cRcvBuf+.3,W              ; lower byte of min
     movwi   FSR0++
     
     ;//WIP HSS// -- clock map and peak absolute should be handled right here instead of skipped over
     ;//WIP HSS// end
+    
+    ; check Slave's peakADAbsolute to see if it is new peak
+    movf    i2cRcvBuf+.56,W
+    subwf   peakADAbsolute,W
+    btfsc   STATUS,C            ; if clear then new peak was found (Slave's peak > peakADAbsolute)
+    goto    hGRDRC_noNewPeak
+    
+    movf    i2cRcvBuf+.56,W     ; store new peak
+    movwf   peakADAbsolute
+    banksel scratch2
+    movf    scratch2,W          ; store Slave PIC
+    movwf   slaveWithPeak
+    
+hGRDRC_noNewPeak:
 
     banksel serialXmtBufPtrH            ; store updated pointer
     movf    FSR0H,W
@@ -1387,6 +1486,8 @@ hGRDRC_checkSumGood:
 
     decfsz  scratch2,F                  ; loop until all slaves queried
     goto    hGRDRC_loop
+    
+    ; end get and handle rundata packet from slaves
     
     ;//WIP HSS// -- the clock map should be loaded properly instead of just 0s
     
@@ -1401,12 +1502,66 @@ hGRDRC_clockMapLoop:
     movwi   -.32[FSR0]
     
     ;//WIP HSS// end
+    
+    ; request snapshot buffer from proper Slave
+    
+    banksel scratch0
+    movf    slaveWithPeak,W             ; compute slave address
+    sublw   NUM_SLAVES
+    movwf   scratch0                    ; store Slave PIC address
 
-    movlw   .82                         ; number of data bytes in packet which are checksummed
+    movlw   .128                        ; number of bytes expected in return packet
+    movwf   scratch1                    ; (includes checksum)
+
+    movlw   PIC_GET_SNAPSHOT_CMD        ; command to slaves
+
+    call    requestAndReceivePktFromSlavePIC
+    
+    banksel scratch0
+    movlw   .128                        ; number of data bytes including checksum in slave packet
+    movwf   scratch0
+    addfsr  FSR0,-.32                   ; move FSR0 to first byte of packet (-128)
+    addfsr  FSR0,-.32
+    addfsr  FSR0,-.32
+    addfsr  FSR0,-.32                   ; addfsr instruction can only handle -32 to 31
+
+    call    sumSeries                   ; sum all databytes along with the checksum ending byte
+    btfsc   STATUS,Z
+    goto    hGRDRC_snapCheckSumGood     ; sum was zero so checksum good
+
+    banksel flags                       ; flag and count the error, then transfer it anyway
+    incf    slaveI2CErrorCnt,F
+    bsf     statusFlags,SLV_COM_ERROR
+    
+hGRDRC_snapCheckSumGood:
+
+    banksel serialXmtBufPtrH            ; point FSR0 at proper register of serial transmit buffer
+    movf    serialXmtBufPtrH,W
+    movwf   FSR0H
+    movf    serialXmtBufPtrL,W
+    movwf   FSR0L
+
+    movlw   high i2cRcvBuf
+    movwf   FSR1H
+    movlw   low i2cRcvBuf
+    movwf   FSR1L
+    
+    banksel scratch0                    ; put snapshot buffer into the serial xmt buffer
+    movlw   SNAPSHOT_BUF_LEN
+    movwf   scratch0
+hGRDRC_snapLoop:
+    movwi   INDF1++
+    moviw   INDF0++
+    decfsz  scratch0,F
+    goto    hGRDRC_snapLoop
+    
+    ; end request snapshot buffer
+
+    movlw   .210                        ; number of data bytes in packet which are checksummed
     movwf   scratch0                    ; (includes command -- see notes at top of function)
     call    calcAndStoreCheckSumSerPrtXmtBuf
 
-    movlw   .86                         ; number of bytes to send to Rabbit (includes header,
+    movlw   .214                        ; number of bytes to send to Rabbit (includes header,
                                         ; length, command, and checksum -- see top of function)
 
     call    startSerialPortTransmit
