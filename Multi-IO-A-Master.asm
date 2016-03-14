@@ -447,7 +447,7 @@ SERIAL_XMT_BUF_LEN  EQU .240        ; NOTE: This buffer is larger than the 80 bl
                                     ; in each block, so it is generally accessed using an Indirect
                                     ; Register in the Linear Addressing space.
 
-I2C_RCV_BUF_LEN      EQU .31
+I2C_RCV_BUF_LEN      EQU .160       ; Occupies two banks
 
 I2C_XMT_BUF_LEN      EQU .31
       
@@ -565,9 +565,6 @@ NUM_SLAVES EQU 0x08              ; number of Slave PICs on the I2C bus
     i2cXmtBuf:I2C_XMT_BUF_LEN
 
     i2cRcvBufNumBytes
-    i2cRcvBufPtrH
-    i2cRcvBufPtrL
-    i2cRcvBuf:I2C_RCV_BUF_LEN
 
  endc
 
@@ -575,24 +572,22 @@ NUM_SLAVES EQU 0x08              ; number of Slave PICs on the I2C bus
 ;--------------------------------------------------------------------------
  
 ;--------------------------------------------------------------------------
-; Bank 02 - 80 bytes of free space
+; Bank 02 ~ Bank 03 - 160 bytes of free space - I2C Receive Buffer
 
- cblock 0x180               ; starting address
+ cblock 0x120               ; starting address
 
- endc
-  
-; end Bank 02
-;--------------------------------------------------------------------------
- 
-;--------------------------------------------------------------------------
-; Bank 03 - 80 bytes of free space
-  
- cblock 0x1a0               ; starting address
+    i2cRcvBuf:I2C_RCV_BUF_LEN
  
  endc
   
-; end Bank 03
+; end Bank 02 ~ Bank 03
 ;--------------------------------------------------------------------------
+ 
+; Compute linear address of i2cRcvBuf
+I2C_RCV_BUF_OFFSET              EQU (i2cRcvBuf & 0x7f) - 0x20
+I2C_RCV_BUF_LINEAR_ADDRESS      EQU ((i2cRcvBuf/.128)*.80)+0x2000+I2C_RCV_BUF_OFFSET
+I2C_RCV_BUF_LINEAR_LOC_H        EQU high I2C_RCV_BUF_LINEAR_ADDRESS
+I2C_RCV_BUF_LINEAR_LOC_L        EQU low I2C_RCV_BUF_LINEAR_ADDRESS
  
 ;--------------------------------------------------------------------------
 ; Bank 04 - 80 bytes of free space
@@ -980,13 +975,17 @@ hGALADVRCCheckSumGood:
     movf    serialXmtBufPtrL, W
     movwf   FSR0L
 
-    banksel i2cRcvBuf                   ; load last AD value into serial transmit buffer
-    movf    i2cRcvBuf, W                ; slave's upper byte of last AD value
+    movlw   I2C_RCV_BUF_LINEAR_LOC_H    ; point FSR1 at start of rcv buffer
+    movwf   FSR1H
+    movlw   I2C_RCV_BUF_LINEAR_LOC_L
+    movwf   FSR1L
+    
+    moviw   FSR1++                      ; slave's upper byte of last AD value
     movwi   FSR0++
-    movf    i2cRcvBuf+.1, W             ; slave's lower byte of last AD value
+    moviw   FSR1++                      ; slave's lower byte of last AD value
     movwi   FSR0++
     
-    movf    i2cRcvBuf+.2, W                ; slave's checksum for this packet
+    moviw   FSR1++                      ; slave's checksum for this packet
     movwi   FSR0++
 
     banksel serialXmtBufPtrH            ; store updated pointer
@@ -1095,39 +1094,42 @@ hASRCCheckSumGood:
     movf    serialXmtBufPtrL, W
     movwf   FSR0L
 
-    banksel i2cRcvBuf
+    movlw   I2C_RCV_BUF_LINEAR_LOC_H    ; point FSR1 at start of rcv buffer
+    movwf   FSR1H
+    movlw   I2C_RCV_BUF_LINEAR_LOC_L
+    movwf   FSR1L
 
-    movf    i2cRcvBuf, W                ; slave's I2C address
+    moviw   FSR1++                      ; slave's I2C address
     movwi   FSR0++
 
-    movf    i2cRcvBuf+.1, W             ; slave's software version most significant byte
+    moviw   FSR1++                      ; slave's software version most significant byte
     movwi   FSR0++
 
-    movf    i2cRcvBuf+.2, W             ; slave's software version least significant byte
+    moviw   FSR1++                      ; slave's software version least significant byte
     movwi   FSR0++
 
-    movf    i2cRcvBuf+.3, W             ; slave's flag byte
+    moviw   FSR1++                      ; slave's flag byte
     movwi   FSR0++
 
-    movf    i2cRcvBuf+.4, W             ; slave's status byte
+    moviw   FSR1++                      ; slave's status byte
     movwi   FSR0++
 
-    movf    i2cRcvBuf+.5, W             ; slave's communication error count
+    moviw   FSR1++                      ; slave's communication error count
     movwi   FSR0++
 
-    movf    i2cRcvBuf+.6, W             ; slave's last A/D sample
+    moviw   FSR1++                      ; slave's last A/D sample
     movwi   FSR0++
 
-    movf    i2cRcvBuf+.7, W             ; unused -- for future use
+    moviw   FSR1++                      ; unused -- for future use
     movwi   FSR0++
 
-    movf    i2cRcvBuf+.8, W             ; unused -- for future use
+    moviw   FSR1++                      ; unused -- for future use
     movwi   FSR0++
 
-    movf    i2cRcvBuf+.9, W             ; unused -- for future use
+    moviw   FSR1++                      ; unused -- for future use
     movwi   FSR0++
 
-    movf    i2cRcvBuf+.10, W            ; slave's packet checksum
+    moviw   FSR1++                      ; slave's packet checksum
     movwi   FSR0++
 
     banksel flags
@@ -1447,30 +1449,35 @@ hGRDRC_rundataCheckSumGood:
     movf    serialXmtBufPtrL, W
     movwf   FSR0L
 
-    banksel i2cRcvBuf
+    movlw   I2C_RCV_BUF_LINEAR_LOC_H    ; point FSR1 at start of rcv buffer
+    movwf   FSR1H
+    movlw   I2C_RCV_BUF_LINEAR_LOC_L
+    movwf   FSR1L
     
     ; load slave's overall max A/D into serial transmit buffer
-    movf    i2cRcvBuf,W                 ; upper byte of max
+    moviw   FSR1++                      ; upper byte of max
     movwi   FSR0++
-    movf    i2cRcvBuf+.1,W              ; lower byte of max
+    moviw   FSR1++                      ; lower byte of max
     movwi   FSR0++
 
     ; load slave's overall min A/D into serial transmit buffer
-    movf    i2cRcvBuf+.2,W              ; upper byte of min
+    moviw   FSR1++                      ; upper byte of min
     movwi   FSR0++
-    movf    i2cRcvBuf+.3,W              ; lower byte of min
+    moviw   FSR1++                      ; lower byte of min
     movwi   FSR0++
     
     ;//WIP HSS// -- clock map and peak absolute should be handled right here instead of skipped over
+    addfsr  FSR1,.31    ; plus .49 to skip over
+    addfsr  FSR1,.18
     ;//WIP HSS// end
     
     ; check Slave's peakADAbsolute to see if it is new peak
-    movf    i2cRcvBuf+.56,W
+    movf    INDF1,W
     subwf   peakADAbsolute,W
     btfsc   STATUS,C            ; if clear then new peak was found (Slave's peak > peakADAbsolute)
     goto    hGRDRC_noNewPeak
     
-    movf    i2cRcvBuf+.56,W     ; store new peak
+    movf    INDF1,W             ; store new peak
     movwf   peakADAbsolute
     banksel scratch2
     movf    scratch2,W          ; store Slave PIC
@@ -1541,9 +1548,9 @@ hGRDRC_snapCheckSumGood:
     movf    serialXmtBufPtrL,W
     movwf   FSR0L
 
-    movlw   high i2cRcvBuf
+    movlw   I2C_RCV_BUF_LINEAR_LOC_H    ; point FSR1 at start of rcv buffer
     movwf   FSR1H
-    movlw   low i2cRcvBuf
+    movlw   I2C_RCV_BUF_LINEAR_LOC_L
     movwf   FSR1L
     
     banksel scratch0                    ; put snapshot buffer into the serial xmt buffer
@@ -2036,9 +2043,9 @@ readBytesFromSlavePIC:
     banksel i2cRcvBufNumBytes           ; store the number of bytes to read
     movwf   i2cRcvBufNumBytes
 
-    movlw   high i2cRcvBuf              ; point FSR0 at start of rcv buffer
+    movlw   I2C_RCV_BUF_LINEAR_LOC_H    ; point FSR0 at start of rcv buffer
     movwf   FSR0H
-    movlw   i2cRcvBuf
+    movlw   I2C_RCV_BUF_LINEAR_LOC_L
     movwf   FSR0L
 
     movlw   high i2cRcvBufNumBytes      ; point FSR1 at number of bytes to transmit variable
