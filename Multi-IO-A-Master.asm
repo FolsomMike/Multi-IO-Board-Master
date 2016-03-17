@@ -1380,9 +1380,12 @@ setUpSerialXmtBuffer:
 ;   ---
 ;   214 bytes    total
 ;
-;
 
 handleGetRunDataRbtCmd:
+
+    clrf    peakADAbsolute
+    movlw   0xFF                        ; set slaveWithPeak to any number > 127 so bit 8 is set
+    movwf   slaveWithPeak
 
     banksel scratch0
     
@@ -1510,27 +1513,53 @@ hGRDRC_clockMapLoop:
     
     ;//WIP HSS// end
     
-    ; request snapshot buffer from proper Slave
+    ; begin stuff pertaining to the snapshot buffer
     
+    movf    slaveWithPeak,W             ; load with zeros if there was no greatest peak, which
+    btfss   WREG,.8                     ; if set then no greatest peak
+    goto    requestSnapshotBuffer       ; peak was found earlier -- request snapshot buf from slave
+    
+    ; no new peak found, use 0s for all of snapshot buf
+    movlw   I2C_RCV_BUF_LINEAR_LOC_H    ; put 0s in I2C Rcv buf where snapshot buf would be
+    movwf   FSR0H
+    movlw   I2C_RCV_BUF_LINEAR_LOC_L
+    movwf   FSR0L
+    banksel scratch0
+    movlw   SNAPSHOT_BUF_LEN+1          ; add 1 for checksum
+    movwf   scratch0
+    movlw   0x00
+hGRDRC_zeroI2CLoop:
+    movwi   FSR0++
+    decfsz  scratch0,F
+    goto    hGRDRC_zeroI2CLoop
+    
+    goto    skipSnapshotRequest
+    ; end no new peak found, use 0s for all of snapshot buf
+    
+requestSnapshotBuffer:
+
+    ; request snapshot buffer from proper Slave
     banksel scratch0
     movf    slaveWithPeak,W             ; compute slave address
     sublw   NUM_SLAVES
     movwf   scratch0                    ; store Slave PIC address
 
-    movlw   .128                        ; number of bytes expected in return packet
-    movwf   scratch1                    ; (includes checksum)
+    movlw   .129                        ; number of bytes expected in return packet
+    movwf   scratch1                    ; (includes checksum)  
 
     movlw   PIC_GET_SNAPSHOT_CMD        ; command to slaves
-
     call    requestAndReceivePktFromSlavePIC
+    ; end request snapshot buffer
+    
+skipSnapshotRequest:
     
     banksel scratch0
-    movlw   .128                        ; number of data bytes including checksum in slave packet
+    movlw   .129                        ; number of data bytes including checksum in slave packet
     movwf   scratch0
-    addfsr  FSR0,-.32                   ; move FSR0 to first byte of packet (-128)
-    addfsr  FSR0,-.32
-    addfsr  FSR0,-.32
-    addfsr  FSR0,-.32                   ; addfsr instruction can only handle -32 to 31
+    movlw   I2C_RCV_BUF_LINEAR_LOC_H    ; point FSR0 to first byte of packet
+    movwf   FSR0H
+    movlw   I2C_RCV_BUF_LINEAR_LOC_L
+    movwf   FSR0L
 
     call    sumSeries                   ; sum all databytes along with the checksum ending byte
     btfsc   STATUS,Z
@@ -1557,12 +1586,10 @@ hGRDRC_snapCheckSumGood:
     movlw   SNAPSHOT_BUF_LEN
     movwf   scratch0
 hGRDRC_snapLoop:
-    movwi   INDF1++
-    moviw   INDF0++
+    movwi   FSR1++
+    moviw   FSR0++
     decfsz  scratch0,F
     goto    hGRDRC_snapLoop
-    
-    ; end request snapshot buffer
 
     movlw   .210                        ; number of data bytes in packet which are checksummed
     movwf   scratch0                    ; (includes command -- see notes at top of function)
