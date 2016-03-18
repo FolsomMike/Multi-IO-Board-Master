@@ -1462,6 +1462,10 @@ hGRDRC_rundataCheckSumGood:
     movwi   FSR0++
     moviw   FSR1++                      ; lower byte of max
     movwi   FSR0++
+    
+    ; //WIP HSS// don't just skip over
+    addfsr  FSR1,.2                     ; skip over max peak clock loc and linear loc
+    ; //WIP HSS// end don't just skip over
 
     ; load slave's overall min A/D into serial transmit buffer
     moviw   FSR1++                      ; upper byte of min
@@ -1469,9 +1473,13 @@ hGRDRC_rundataCheckSumGood:
     moviw   FSR1++                      ; lower byte of min
     movwi   FSR0++
     
+    ; //WIP HSS// don't just skip over
+    addfsr  FSR1,.2                     ; skip over min peak clock loc and linear loc
+    ; //WIP HSS// end don't just skip over
+    
     ;//WIP HSS// -- clock map and peak absolute should be handled right here instead of skipped over
-    addfsr  FSR1,.31    ; plus .49 to skip over
-    addfsr  FSR1,.18
+    addfsr  FSR1,.31    ; plus .48 to skip over clock map
+    addfsr  FSR1,.17
     ;//WIP HSS// end
     
     ; check Slave's peakADAbsolute to see if it is new peak
@@ -1510,6 +1518,12 @@ hGRDRC_clockMapLoop:
     goto    hGRDRC_clockMapLoop
     movlw   0x09                        ; put 09 into the 16 clock position
     movwi   -.32[FSR0]
+    
+    banksel serialXmtBufPtrH            ; store updated pointer
+    movf    FSR0H,W
+    movwf   serialXmtBufPtrH
+    movf    FSR0L,W
+    movwf   serialXmtBufPtrL
     
     ;//WIP HSS// end
     
@@ -1586,8 +1600,8 @@ hGRDRC_snapCheckSumGood:
     movlw   SNAPSHOT_BUF_LEN
     movwf   scratch0
 hGRDRC_snapLoop:
-    movwi   FSR1++
-    moviw   FSR0++
+    moviw   FSR1++
+    movwi   FSR0++
     decfsz  scratch0,F
     goto    hGRDRC_snapLoop
 
