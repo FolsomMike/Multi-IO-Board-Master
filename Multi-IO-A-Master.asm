@@ -1516,8 +1516,8 @@ hGRDRC_clockMapLoop:
     movwi   FSR0++                      ; populate clock map with 0s
     decfsz  scratch2
     goto    hGRDRC_clockMapLoop
-    movlw   0x09                        ; put 09 into the 16 clock position
-    movwi   -.32[FSR0]
+    ;//DEBUG HSS//movlw   0x09                        ; put 09 into the 16 clock position
+    ;//DEBUG HSS//movwi   -.32[FSR0]
     
     banksel serialXmtBufPtrH            ; store updated pointer
     movf    FSR0H,W
