@@ -880,7 +880,7 @@ handleSetChannelOnOffRbtCmd:
 
     call    sendBytesToSlavePICViaI2C       ; send bytes
     
-    goto    resetSerialPortReceiveBuffer
+    goto    sendAckPktToRbt
     
 ; end of handleSetChannelOnOffRbtCmd
 ;--------------------------------------------------------------------------------------------------
@@ -1197,9 +1197,65 @@ handleSetPotRbtCmd:
     movlw   PIC_DISABLE_POT_CMD          ; command to slave
     call    sendCommandToSlavePIC
 
-    goto    resetSerialPortReceiveBuffer
+    goto    sendAckPktToRbt
 
 ; end of handleSetPotRbtCmd
+;--------------------------------------------------------------------------------------------------
+    
+;--------------------------------------------------------------------------------------------------
+; sendAckPktToRbt
+;
+; Sends an acknowledge packet to the Rbt to notify that the last command was handled and that this
+; Master PIC is ready to handle another command. This is done so that the Rbt does not overwhelm
+; this Master PIC with commands, causing overlapping commands to be ignored.
+;
+; Number of bytes to be checksummed (passed to calcAndStoreCheckSumSerPrtXmtBuf):
+;
+;   01 bytes from this Master PIC -- command byte
+;   ---
+;   01 bytes total
+;
+; Number of bytes including checksum (passed to setUpSerialXmtBuffer):
+;
+;   01 bytes from this Master PIC -- command byte
+;   01 bytes from this Master PIC -- check sum byte
+;   ---
+;   02 bytes total
+;
+; Number of bytes including checksum, header, and length (passed to startSerialPortTransmit):
+;
+;   02 bytes from this Master PIC -- header bytes
+;   01 bytes from this Master PIC -- length byte
+;   01 bytes from this Master PIC -- command byte
+;   01 bytes from this Master PIC -- check sum byte
+;   ---
+;   05 bytes total
+;
+
+sendAckPktToRbt:
+    
+    banksel scratch0
+    
+    movlw   .02                         ; setup serial port xmt buffer for proper number of bytes
+    movwf   scratch0                    ; (see notes at top of this function for details)
+
+    movlw   RBT_ACK_CMD                 ; command byte for the xmt packet
+    movwf   scratch1
+
+    call    setUpSerialXmtBuffer
+    
+    movlw   .01                         ; number of data bytes in packet which are checksummed
+    movwf   scratch0
+    call    calcAndStoreCheckSumSerPrtXmtBuf
+    
+    movlw   .05                         ; number of bytes to send to Rabbit (see notes at top of 
+                                        ; function for info)
+
+    call    startSerialPortTransmit
+
+    goto    resetSerialPortReceiveBuffer
+
+; end of sendAckPktToRbt
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
