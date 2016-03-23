@@ -674,7 +674,7 @@ SERIAL_XMT_BUF_LINEAR_LOC_L     EQU low SERIAL_XMT_BUF_LINEAR_ADDRESS
 
  cblock 0x620                ; starting address
  
-    clockMap:MAP_BUF_LEN
+    clockmap:MAP_BUF_LEN
 
  endc
 
@@ -1445,6 +1445,8 @@ handleGetRunDataRbtCmd:
     clrf    peakADAbsolute
     movlw   0xFF                        ; set slaveWithPeak to any number > 127 so bit 8 is set
     movwf   slaveWithPeak
+    
+    call    resetClockmap               ; reset clockmap
 
     banksel scratch0
     
@@ -1536,10 +1538,38 @@ hGRDRC_rundataCheckSumGood:
     addfsr  FSR1,.2                     ; skip over min peak clock loc and linear loc
     ; //WIP HSS// end don't just skip over
     
-    ;//WIP HSS// -- clock map and peak absolute should be handled right here instead of skipped over
-    addfsr  FSR1,.31    ; plus .48 to skip over clock map
-    addfsr  FSR1,.17
-    ;//WIP HSS// end
+    banksel serialXmtBufPtrH            ; store updated pointer
+    movf    FSR0H,W
+    movwf   serialXmtBufPtrH
+    movf    FSR0L,W
+    movwf   serialXmtBufPtrL
+    
+    ; compare clockmap peaks
+    
+    movlw   high clockmap               ; point FSR0 at Master's clockmap start
+    movwf   FSR0H
+    movlw   low clockmap
+    movwf   FSR0L
+    
+    ; FSR1 should be pointed at clockmap received from Slave PIC
+    
+    movlw   MAP_BUF_LEN                 ; setup loop counter
+    movwf   scratch0
+
+hGRDRC_clkmpPeakLoop:
+    movf    INDF1,W                     ; see if Slave's value is new peak for clock position
+    subwf   INDF0,W
+    movf    INDF1,W
+    btfss   STATUS,C                    ; if clear then it is new peak
+    movwf   INDF0                       ; Slave value > current peak for clock position; replace old
+    
+    addfsr  FSR0,.1                     ; increment pointers to next clock position
+    addfsr  FSR1,.1                     ; increment pointers to next clock position
+    
+    decfsz  scratch0                    ; loop until entire clockmap handled
+    goto    hGRDRC_clkmpPeakLoop
+    
+    ; end compare clockmap peaks
     
     ; check Slave's peakADAbsolute to see if it is new peak
     movf    INDF1,W
@@ -1555,36 +1585,42 @@ hGRDRC_rundataCheckSumGood:
     
 hGRDRC_noNewPeak:
 
-    banksel serialXmtBufPtrH            ; store updated pointer
-    movf    FSR0H,W
-    movwf   serialXmtBufPtrH
-    movf    FSR0L,W
-    movwf   serialXmtBufPtrL
-
     decfsz  scratch2,F                  ; loop until all slaves queried
     goto    hGRDRC_loop
     
     ; end get and handle rundata packet from slaves
     
-    ;//WIP HSS// -- the clock map should be loaded properly instead of just 0s
+    ; put clockmap into serial xmt buf
     
-    movlw   .48                         ; clock map is 48 bytes
+    banksel serialXmtBufPtrH            ; point FSR0 serial xmt
+    movf    serialXmtBufPtrH,W
+    movwf   FSR0H
+    movf    serialXmtBufPtrL,W
+    movwf   FSR0L
+    
+    movlw   high clockmap               ; point FSR1 at clockmap start
+    movwf   FSR1H
+    movlw   low clockmap
+    movwf   FSR1L
+    
+    movlw   MAP_BUF_LEN                 ; setup loop counter
     movwf   scratch2
-    movlw   .0
-hGRDRC_clockMapLoop:
-    movwi   FSR0++                      ; populate clock map with 0s
-    decfsz  scratch2
-    goto    hGRDRC_clockMapLoop
-    ;//DEBUG HSS//movlw   0x09                        ; put 09 into the 16 clock position
-    ;//DEBUG HSS//movwi   -.32[FSR0]
+    
+hGRDRC_serXmtClkmpLoop:
+    
+    moviw   FSR1++
+    movwi   FSR0++
+    
+    decfsz  scratch2                    ; loop until entire clockmap put into serial xmt buf
+    goto    hGRDRC_serXmtClkmpLoop
+    
+    ; end put clockmap into serial xmt buf
     
     banksel serialXmtBufPtrH            ; store updated pointer
     movf    FSR0H,W
     movwf   serialXmtBufPtrH
     movf    FSR0L,W
     movwf   serialXmtBufPtrL
-    
-    ;//WIP HSS// end
     
     ; begin stuff pertaining to the snapshot buffer
     
@@ -1676,6 +1712,36 @@ hGRDRC_snapLoop:
     goto    resetSerialPortReceiveBuffer
 
 ; end of handleGetRunDataRbtCmd
+;--------------------------------------------------------------------------------------------------
+    
+;--------------------------------------------------------------------------------------------------
+; resetClockmap
+;
+; Resets the clockmap buffer by zeroing all of its values.
+;
+
+resetClockmap:
+    
+    movlw   high clockmap                   ; point FSR0 at clockmap start
+    movwf   FSR0H
+    movlw   low clockmap
+    movwf   FSR0L
+
+    banksel scratch0                        ; setup loop counter
+    movlw   MAP_BUF_LEN
+    movwf   scratch0
+
+    movlw   0x00
+
+cMBLoop:
+
+    movwi   FSR0++
+    decfsz  scratch0,F
+    goto    cMBLoop
+
+    return
+
+; end of resetClockmap
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
