@@ -849,10 +849,13 @@ parseCommandFromSerialPacket:
 ;--------------------------------------------------------------------------------------------------
 ; handleSetChannelOnOffRbtCmd
 ;
-; Handles the RBT_GET_ALL_AD_VALUES_CMD command by retrieving the last AD value from each of the
-; slave PICs and then sending the collection of values to the Rabbit.
+; Handles the RBT_SET_ONOFF_CMD command by passing the on/off byte in the serial buffer onto the 
+; Slave PIC address in the serial buffer.
 ;
-; //WIP HSS// -- describe this stuff
+; ON ENTRY:
+;
+;   serialRcvBuf+1  =   Slave PIC address
+;   serialRcvBuf+2  =   on/off byte
 ;
 
 handleSetChannelOnOffRbtCmd:
