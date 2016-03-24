@@ -266,6 +266,7 @@ RBT_SET_ONOFF_CMD               EQU .6
 RBT_GET_RUN_DATA_CMD            EQU .7
 RBT_GET_ALL_LAST_AD_VALUES_CMD  EQU .8
 RBT_SET_LOCATION_CMD            EQU .9
+RBT_SET_CLOCK_CMD               EQU .10
 
 ; this section from legacy code -- delete after functions added to above list
 ;RABBIT_RESET_ENCODERS          EQU 0x01
@@ -288,6 +289,7 @@ PIC_GET_LAST_AD_VALUE_CMD       EQU .7
 PIC_SET_ONOFF_CMD               EQU .8
 PIC_GET_SNAPSHOT_CMD            EQU .9
 PIC_SET_LOCATION_CMD            EQU .10
+PIC_SET_CLOCK_CMD               EQU .11
 
 ; end of Defines
 ;--------------------------------------------------------------------------------------------------
@@ -847,6 +849,11 @@ parseCommandFromSerialPacket:
     sublw   RBT_SET_LOCATION_CMD
     btfsc   STATUS,Z
     goto    handleSetLocationRbtCmd
+    
+    movf    INDF0, W
+    sublw   RBT_SET_CLOCK_CMD
+    btfsc   STATUS,Z
+    goto    handleSetClockRbtCmd
 
     goto    resetSerialPortReceiveBuffer
 
@@ -935,6 +942,48 @@ handleSetLocationRbtCmd:
     goto    sendAckPktToRbt
     
 ; end of handleSetLocationRbtCmd
+;--------------------------------------------------------------------------------------------------
+    
+;--------------------------------------------------------------------------------------------------
+; handleSetClockRbtCmd
+;
+; Handles the RBT_SET_CLOCK_CMD command by passing the clock position byte in the serial buffer on 
+; to the Slave PIC whose address is in the serial buffer.
+;
+; ON ENTRY:
+;
+;   serialRcvBuf+1  =   Slave PIC address
+;   serialRcvBuf+2  =   clock position byte
+;
+
+handleSetClockRbtCmd:
+    
+    movlw   high i2cXmtBuf                  ; point FSR0 at start of xmt buffer
+    movwf   FSR0H
+    movlw   low i2cXmtBuf
+    movwf   FSR0L
+    
+    movlw   high i2cXmtBufNumBytes          ; point FSR1 at numBytes variable
+    movwf   FSR1H
+    movlw   low i2cXmtBufNumBytes
+    movwf   FSR1L
+    
+    movlw   0x02                            ; sending 2 bytes on I2C bus
+    movwf   INDF1
+    
+    banksel serialRcvBuf
+    
+    movlw   PIC_SET_LOCATION_CMD            ; put command to slave in xmt buffer
+    movwf   INDF0
+    movf    serialRcvBuf+2,W                ; put clock position byte in xmt buffer
+    movwi   1[FSR0]
+    movf    serialRcvBuf+1,W                ; put Slave I2C address into W
+
+    call    sendBytesToSlavePICViaI2C       ; send bytes
+    
+    goto    sendAckPktToRbt
+    
+; end of handleSetClockRbtCmd
 ;--------------------------------------------------------------------------------------------------
     
 ;--------------------------------------------------------------------------------------------------
