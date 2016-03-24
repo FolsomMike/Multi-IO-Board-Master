@@ -1509,9 +1509,10 @@ setUpSerialXmtBuffer:
 ;   001 bytes   Master PIC      ~ number of times rundata pkt has been sent
 ;   032 bytes   Slave PICs      ~ peaks ~ 4 bytes per slave * 8 slaves = 32 databytes
 ;   048 bytes   Master PIC      ~ greatest clock map values of all slaves (determined by Master)
-;   128 bytes   Master PIC      ~ greatest snapshot buffer of all slaves (determined by Master)
+;   001 bytes   Slave PIC       ~ address of most recent A/D value put in following snapshot
+;   128 bytes   Slave PIC       ~ greatest snapshot buffer of all slaves (determined by Master)
 ;   ---
-;   210 bytes   total
+;   211 bytes   total
 ;
 ; Number of bytes including checksum (passed to setUpSerialXmtBuffer):
 ;
@@ -1519,10 +1520,11 @@ setUpSerialXmtBuffer:
 ;   001 bytes   Master PIC      ~ number of times rundata pkt has been sent
 ;   032 bytes   Slave PICs      ~ peaks ~ 4 bytes per slave * 8 slaves = 32 databytes
 ;   048 bytes   Master PIC      ~ greatest clock map values of all slaves (determined by Master)
-;   128 bytes   Master PIC      ~ greatest snapshot buffer of all slaves (determined by Master)
+;   001 bytes   Slave PIC       ~ address of most recent A/D value put in following snapshot
+;   128 bytes   Slave PIC       ~ greatest snapshot buffer of all slaves (determined by Master)
 ;   001 bytes   Master PIC      ~ checksum
 ;   ---
-;   211 bytes   total
+;   212 bytes   total
 ;
 ; Number of bytes including checksum, header, and length (passed to startSerialPortTransmit):
 ;
@@ -1532,10 +1534,11 @@ setUpSerialXmtBuffer:
 ;   001 bytes   Master PIC      ~ number of times rundata pkt has been sent
 ;   032 bytes   Slave PICs      ~ peaks ~ 4 bytes per slave * 8 slaves = 32 databytes
 ;   048 bytes   Master PIC      ~ greatest clock map values of all slaves (determined by Master)
-;   128 bytes   Master PIC      ~ greatest snapshot buffer of all slaves (determined by Master)
+;   001 bytes   Slave PIC       ~ address of most recent A/D value put in following snapshot
+;   128 bytes   Slave PIC       ~ greatest snapshot buffer of all slaves (determined by Master)
 ;   001 bytes   Master PIC      ~ checksum
 ;   ---
-;   214 bytes    total
+;   215 bytes    total
 ;
 
 handleGetRunDataRbtCmd:
@@ -1548,7 +1551,7 @@ handleGetRunDataRbtCmd:
 
     banksel scratch0
     
-    movlw   .211                        ; setup serial port xmt buffer for proper number of bytes
+    movlw   .212                        ; setup serial port xmt buffer for proper number of bytes
     movwf   scratch0                    ; (includes checksum and command -- see top of function)
 
     movlw   RBT_GET_RUN_DATA_CMD        ; command byte for the serial xmt packet
@@ -1732,7 +1735,7 @@ hGRDRC_serXmtClkmpLoop:
     movlw   I2C_RCV_BUF_LINEAR_LOC_L
     movwf   FSR0L
     banksel scratch0
-    movlw   SNAPSHOT_BUF_LEN+1          ; add 1 for checksum
+    movlw   .130
     movwf   scratch0
     movlw   0x00
 hGRDRC_zeroI2CLoop:
@@ -1751,7 +1754,7 @@ requestSnapshotBuffer:
     sublw   NUM_SLAVES
     movwf   scratch0                    ; store Slave PIC address
 
-    movlw   .129                        ; number of bytes expected in return packet
+    movlw   .130                        ; number of bytes expected in return packet
     movwf   scratch1                    ; (includes checksum)  
 
     movlw   PIC_GET_SNAPSHOT_CMD        ; command to slaves
@@ -1761,7 +1764,7 @@ requestSnapshotBuffer:
 skipSnapshotRequest:
     
     banksel scratch0
-    movlw   .129                        ; number of data bytes including checksum in slave packet
+    movlw   .130                        ; number of data bytes including checksum in slave packet
     movwf   scratch0
     movlw   I2C_RCV_BUF_LINEAR_LOC_H    ; point FSR0 to first byte of packet
     movwf   FSR0H
@@ -1798,11 +1801,11 @@ hGRDRC_snapLoop:
     decfsz  scratch0,F
     goto    hGRDRC_snapLoop
 
-    movlw   .210                        ; number of data bytes in packet which are checksummed
+    movlw   .211                        ; number of data bytes in packet which are checksummed
     movwf   scratch0                    ; (includes command -- see notes at top of function)
     call    calcAndStoreCheckSumSerPrtXmtBuf
 
-    movlw   .214                        ; number of bytes to send to Rabbit (includes header,
+    movlw   .215                        ; number of bytes to send to Rabbit (includes header,
                                         ; length, command, and checksum -- see top of function)
 
     call    startSerialPortTransmit
