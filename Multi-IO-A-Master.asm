@@ -315,7 +315,7 @@ PIC_GET_SNAPSHOT_CMD            EQU .9
  __CONFIG _CONFIG1, _FOSC_INTOSC & _WDTE_OFF & _PWRTE_OFF & _MCLRE_ON & _CP_OFF & _BOREN_OFF & _CLKOUTEN_ON & _IESO_OFF & _FCMEN_OFF
 ; CONFIG2
 ; __config 0xFFFF
- __CONFIG _CONFIG2, _WRT_ALL & _CPUDIV_NOCLKDIV & _USBLSCLK_48MHz & _PLLMULT_4x & _PLLEN_ENABLED & _STVREN_ON & _BORV_LO & _LPBOR_OFF & _LVP_OFF
+ __CONFIG _CONFIG2, _WRT_ALL & _CPUDIV_NOCLKDIV & _USBLSCLK_48MHz & _PLLMULT_3x & _PLLEN_ENABLED & _STVREN_ON & _BORV_LO & _LPBOR_OFF & _LVP_OFF
 
 ; _FOSC_INTOSC -> internal oscillator, I/O function on OSC1/CLKIN pin
 ; _WDTE_OFF -> watch dog timer disabled
@@ -1851,10 +1851,10 @@ setupClock:
 
     banksel OSCCON
 
-    bcf     OSCCON, IRCF0   ; choose internal clock frequency of 32 MHz (after PLL multiplier)
+    bsf     OSCCON, IRCF0       ; choose internal clock frequency of 48 MHz (after PLL multiplier)
     bsf     OSCCON, IRCF1   
     bsf     OSCCON, IRCF2
-    bsf     OSCCON, IRCF3   ; IRCF<3:0> set to 1110 -> 8 MHz before PLL multiplier
+    bsf     OSCCON, IRCF3       ; IRCF<3:0> set to 1111 -> 16 MHz before PLL multiplier
 
     return
 
@@ -1995,6 +1995,18 @@ setupPortC:
 ; Sets up the serial port for communication with the Rabbit micro-controller.
 ; Also prepares the receive and transmit buffers for use.
 ;
+; Refer to EUSART Baud Rate Generator (BRG) in PIC datasheet for more info on setting the baud rate
+;
+; For Fosc of 32 Mhz: SYNC = 0, BRGH = 1, BRG16 = 1, SPBRG = 138
+; For Fosc of 48 Mhz: SYNC = 0, BRGH = 0, BRG16 = 0, SPBRG = 12
+;
+; Easy formula to determine what SPBRG should be:
+;
+;   SPBRG  = [FOSC/(b*m)] - 1
+;
+;   b = desired baud rate
+;   m = multiplier (64, 16, or 4 depending on which formula you are trying out)
+;
 
 setupSerialPort:
 
@@ -2006,20 +2018,19 @@ setupSerialPort:
 
     clrf    serialPortErrorCnt
 
-    ;aim for a baud rate of 57,600 (will actually be 57,553.95 with 0.07% error)
-    ;for Fosc of 32 Mhz: SYNC = 0, BRGH = 1, BRG16 = 1, SPBRG = 138
-
-    banksel TXSTA               ; set BRGH to 1
-    bsf     TXSTA, BRGH
+    ; aim for a baud rate of 57,600 (will actually be 57,692.30769 with 0.16% error)
+    
+    banksel TXSTA               ; set BRGH to 0
+    bcf     TXSTA, BRGH
     
     banksel BAUDCON
-    bsf     BAUDCON, BRG16      ; set BRG16 to 1
+    bcf     BAUDCON, BRG16      ; set BRG16 to 0
     
-    banksel SPBRGH              ; set SPBRG to 138
+    banksel SPBRGH              ; set SPBRG to 12
     movlw   0x00
     movwf   SPBRGH
     banksel SPBRGL
-    movlw   0x8a
+    movlw   0x0c
     movwf   SPBRGL
 
     ;set UART mode and enable receiver and transmitter
