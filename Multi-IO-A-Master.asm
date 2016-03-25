@@ -973,7 +973,7 @@ handleSetClockRbtCmd:
     
     banksel serialRcvBuf
     
-    movlw   PIC_SET_LOCATION_CMD            ; put command to slave in xmt buffer
+    movlw   PIC_SET_CLOCK_CMD               ; put command to slave in xmt buffer
     movwf   INDF0
     movf    serialRcvBuf+2,W                ; put clock position byte in xmt buffer
     movwi   1[FSR0]
