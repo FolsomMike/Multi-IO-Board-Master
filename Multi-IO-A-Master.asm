@@ -456,7 +456,7 @@ I2C_RCV_BUF_LEN      EQU .160       ; Occupies two banks
 I2C_XMT_BUF_LEN      EQU .31
       
 MAP_BUF_LEN         EQU .48
-SNAPSHOT_BUF_LEN    EQU .128        ; NOTE: Must match length in Slave PICs!
+SNAPSHOT_BUF_LEN    EQU .129        ; NOTE: Must match length in Slave PICs! includes last ad
 
 NUM_SLAVES EQU 0x08              ; number of Slave PICs on the I2C bus
 
@@ -1737,7 +1737,7 @@ hGRDRC_serXmtClkmpLoop:
     banksel scratch0
     movlw   .130
     movwf   scratch0
-    movlw   0x00
+    movlw   0x7F
 hGRDRC_zeroI2CLoop:
     movwi   FSR0++
     decfsz  scratch0,F
