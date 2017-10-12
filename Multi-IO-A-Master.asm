@@ -1577,6 +1577,10 @@ handleGetRunDataRbtCmd:
 
 hGRDRC_loop:
 
+    ;//DEBUG HSS// set high to signify start of request to Slave PIC
+    ;bsf     PORTC, SYNCT
+    ;//DEBUG HSS// end 
+    
     movf    scratch2, W
     sublw   NUM_SLAVES                  ; compute next slave address
     movwf   scratch0                    ; store Slave PIC address
@@ -1687,6 +1691,11 @@ hGRDRC_clkmpPeakLoop:
 hGRDRC_noNewPeak:
 
     decfsz  scratch2,F                  ; loop until all slaves queried
+    
+    ;//DEBUG HSS// set low to signify end of request to Slave PIC
+    bcf     PORTC, .5
+    ;//DEBUG HSS// end 
+    
     goto    hGRDRC_loop
     
     ; end get and handle rundata packet from slaves
@@ -1998,7 +2007,7 @@ setupPortA:
     ; some pins configured further by other functions for setup of serial port, I2C, ADC, etc.
 
     bsf     TRISA, SYNC_RESET           ; input
-
+    
     return
 
 ; end of setupPortA
