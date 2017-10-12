@@ -1578,7 +1578,7 @@ handleGetRunDataRbtCmd:
 hGRDRC_loop:
 
     ;//DEBUG HSS// set high to signify start of request to Slave PIC
-    ;bsf     PORTC, SYNCT
+    bsf     PORTC, SYNCT
     ;//DEBUG HSS// end 
     
     movf    scratch2, W
@@ -1689,13 +1689,12 @@ hGRDRC_clkmpPeakLoop:
     movwf   slaveWithPeak
     
 hGRDRC_noNewPeak:
-
-    decfsz  scratch2,F                  ; loop until all slaves queried
     
     ;//DEBUG HSS// set low to signify end of request to Slave PIC
     bcf     PORTC, .5
     ;//DEBUG HSS// end 
-    
+
+    decfsz  scratch2,F                  ; loop until all slaves queried
     goto    hGRDRC_loop
     
     ; end get and handle rundata packet from slaves
