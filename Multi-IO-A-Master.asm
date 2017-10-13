@@ -1578,7 +1578,7 @@ handleGetRunDataRbtCmd:
 hGRDRC_loop:
 
     ;//DEBUG HSS// set high to signify start of request to Slave PIC
-    bsf     PORTC, SYNCT
+    bsf     PORTA, SYNC_RESET_RA5
     ;//DEBUG HSS// end 
     
     movf    scratch2, W
@@ -1691,7 +1691,7 @@ hGRDRC_clkmpPeakLoop:
 hGRDRC_noNewPeak:
     
     ;//DEBUG HSS// set low to signify end of request to Slave PIC
-    bcf     PORTC, .5
+    bcf     PORTA, SYNC_RESET_RA5
     ;//DEBUG HSS// end 
 
     decfsz  scratch2,F                  ; loop until all slaves queried
@@ -2006,6 +2006,12 @@ setupPortA:
     ; some pins configured further by other functions for setup of serial port, I2C, ADC, etc.
 
     bsf     TRISA, SYNC_RESET           ; input
+    
+    ; //DEBUG HSS// SYNC_RESET, which is RA0 and SYNC_RESET_RA5 are both tied together. To pulse
+    ; // the SYNC_RESET line from this Master PIC, you must use RA5 because RA0 can only be an input
+    ; // Pulsing to test time between PIC data retrieval
+    bcf     TRISA, SYNC_RESET_RA5       
+    ; //DEBUG HSS// end
     
     return
 
