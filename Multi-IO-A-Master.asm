@@ -1730,7 +1730,7 @@ hGRDRC_serXmtClkmpLoop:
     ;//DEBUG HSS// end 
     
     movf    slaveWithPeak,W             ; load with zeros if there was no greatest peak, which
-    btfss   WREG,.8                     ; if set then no greatest peak
+    btfss   WREG,.7                     ; if set then no greatest peak
     goto    requestSnapshotBuffer       ; peak was found earlier -- request snapshot buf from slave
     
     ; no new peak found, use 0s for all of snapshot buf
