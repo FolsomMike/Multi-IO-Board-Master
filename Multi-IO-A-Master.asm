@@ -1725,10 +1725,6 @@ hGRDRC_serXmtClkmpLoop:
     
     ; begin stuff pertaining to the snapshot buffer
     
-    ;//DEBUG HSS// set high to signify start of request to Slave PIC
-    bsf     PORTA, SYNC_RESET_RA5
-    ;//DEBUG HSS// end 
-    
     movf    slaveWithPeak,W             ; load with zeros if there was no greatest peak, which
     btfss   WREG,.7                     ; if set then no greatest peak
     goto    requestSnapshotBuffer       ; peak was found earlier -- request snapshot buf from slave
@@ -1804,10 +1800,6 @@ hGRDRC_snapLoop:
     movwi   FSR0++
     decfsz  scratch0,F
     goto    hGRDRC_snapLoop
-    
-    ;//DEBUG HSS// set low to signify end of request to Slave PIC
-    bcf     PORTA, SYNC_RESET_RA5
-    ;//DEBUG HSS// end 
 
     movlw   .211                        ; number of data bytes in packet which are checksummed
     movwf   scratch0                    ; (includes command -- see notes at top of function)
