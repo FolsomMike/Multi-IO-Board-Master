@@ -1999,12 +1999,6 @@ setupPortA:
 
     bsf     TRISA, SYNC_RESET           ; input
     
-    ; //DEBUG HSS// SYNC_RESET, which is RA0 and SYNC_RESET_RA5 are both tied together. To pulse
-    ; // the SYNC_RESET line from this Master PIC, you must use RA5 because RA0 can only be an input
-    ; // Pulsing to test time between PIC data retrieval
-    bcf     TRISA, SYNC_RESET_RA5       
-    ; //DEBUG HSS// end
-    
     return
 
 ; end of setupPortA
