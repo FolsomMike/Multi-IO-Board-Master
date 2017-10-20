@@ -255,7 +255,6 @@ SOFTWARE_VERSION_LSB    EQU 0x01
 
 ; Rabbit to Master PIC Commands -- sent by Rabbit to trigger actions
 
-
 RBT_NO_ACTION                   EQU .0
 RBT_ACK_CMD                     EQU .1
 RBT_GET_ALL_STATUS              EQU .2
@@ -267,6 +266,9 @@ RBT_GET_RUN_DATA_CMD            EQU .7
 RBT_GET_ALL_LAST_AD_VALUES_CMD  EQU .8
 RBT_SET_LOCATION_CMD            EQU .9
 RBT_SET_CLOCK_CMD               EQU .10
+RBT_START_MONITOR_CMD           EQU .11
+RBT_STOP_MONITOR_CMD            EQU .12
+RBT_GET_MONITOR_PKT_CMD         EQU .13
 
 ; this section from legacy code -- delete after functions added to above list
 ;RABBIT_RESET_ENCODERS          EQU 0x01
@@ -440,9 +442,10 @@ LENGTH_BYTE_VALID   EQU 2
 SERIAL_PACKET_READY EQU 3
 
 ; bits in statusFlags variable
-
 RBT_COM_ERROR       EQU 0
 SLV_COM_ERROR       EQU 1
+MONITOR_MODE        EQU 2
+MONITOR_SEND_PKT    EQU 3
 
 SERIAL_RCV_BUF_LEN  EQU .20
 
@@ -496,8 +499,8 @@ NUM_SLAVES EQU 0x08              ; number of Slave PICs on the I2C bus
 
     statusFlags             ; bit 0: 0 = one or more com errors from Rabbit have occurred
                             ; bit 1: 0 = one or more com errors from Slave PICs have occurred
-                            ; bit 2: 0 =
-                            ; bit 3: 0 =
+                            ; bit 2: 0 = monitor mode on (1) or off (0)
+                            ; bit 3: 0 = send monitor packet; send (1) or don't (0)
                             ; bit 4: 0 =
                             ; bit 5: 0 =
 							; bit 6: 0 =
@@ -521,6 +524,16 @@ NUM_SLAVES EQU 0x08              ; number of Slave PICs on the I2C bus
     serialXmtBufLen
 
     ;the transmit buffer is reserved in another memory bank due to its large size
+    
+    prevMonitor             ; stores values previously read in from inputs
+                            ;   0 = SYNC_RESET
+                            ;   1 = SYNCT_RA1 / SYNCT
+                            ;   2 = ENC1A
+                            ;   3 = ENC1B
+                            ;   4 = ENC2A
+                            ;   5 = ENC2B
+                            ;   6 = unused
+                            ;   7 = unused
 
     hiCurrentLimitPot       ; value for digital pot which sets the high current limit value
     loCurrentLimitPot       ; value for digital pot which sets the high current limit value
@@ -751,10 +764,123 @@ mainLoop:
     banksel flags2                          ; handle packet in serial receive buffer if ready
     btfsc   flags2, SERIAL_PACKET_READY
     call    handleSerialPacket
+    
+    banksel statusFlags                     ; do monitor stuff if in monitor mode
+    btfsc   statusFlags, MONITOR_MODE
+    call    processMonitor
+    ;call    handleGetRunDataRbtCmd ;//DEBUG HSS// remove later
 
     goto    mainLoop
     
 ; end of start
+;--------------------------------------------------------------------------------------------------
+    
+;--------------------------------------------------------------------------------------------------
+; processMonitor
+;
+; Checks all of the encoder and sync inputs for changes. If anything has changed, then a packet is
+; sent to the host.
+;
+; Number of bytes to be checksummed (passed to calcAndStoreCheckSumSerPrtXmtBuf):
+;
+;   001 bytes   Master PIC      ~ command byte
+;   001 bytes   Master PIC      ~ monitor byte
+;   ---
+;   002 bytes   total
+;
+; Number of bytes including checksum (passed to setUpSerialXmtBuffer):
+;
+;   001 bytes   Master PIC      ~ command byte
+;   001 bytes   Master PIC      ~ monitor byte
+;   001 bytes   Master PIC      ~ checksum
+;   ---
+;   003 bytes   total
+;
+; Number of bytes including checksum, header, and length (passed to startSerialPortTransmit):
+;
+;   002 bytes   Master PIC      ~ header
+;   001 bytes   Master PIC      ~ length
+;   001 bytes   Master PIC      ~ command byte
+;   001 bytes   Master PIC      ~ monitor byte
+;   001 bytes   Master PIC      ~ checksum
+;   ---
+;   006 bytes   total
+;
+
+processMonitor:
+    
+    banksel statusFlags
+
+    clrw                                     ; preload W with zero
+    
+    ; Bit values in prevMonitor
+    ;   0 = SYNC_RESET
+    ;   1 = SYNCT_RA1 / SYNCT
+    ;   2 = ENC1A
+    ;   3 = ENC1B
+    ;   4 = ENC2A
+    ;   5 = ENC2B
+    ;   6 = unused
+    ;   7 = unused
+    
+    btfsc   PORTA, SYNC_RESET
+    bsf     WREG, 0
+    
+    btfsc   PORTC, SYNCT
+    bsf     WREG, 1
+    
+    btfsc   PORTC, ENC1A
+    bsf     WREG, 2
+    
+    btfsc   PORTC, ENC1B
+    bsf     WREG, 3
+    
+    btfsc   PORTC, ENC2A
+    bsf     WREG, 4
+    
+    btfsc   PORTC, ENC2B
+    bsf     WREG, 5
+    
+    movwf   scratch0                        ; store new monitor values for use later
+    
+    subwf   prevMonitor, W                  ; set flag to xmt pkt if new and old values not equal
+    btfss   STATUS, Z 
+    bsf     statusFlags, MONITOR_SEND_PKT
+    
+    btfss   statusFlags, MONITOR_SEND_PKT   ; skip over packet xmt if not necessary
+    goto    exitProcessMonitor
+    
+    ; made it here, so xmt monitor byte
+    
+    movf    scratch0, W                     ; ensure we are sending latest data
+    movwf   prevMonitor
+    
+    movlw   .3                          ; setup serial port xmt buffer for proper number of bytes
+    movwf   scratch0                    ; (includes checksum and command -- see notes at top of function)
+
+    movlw   RBT_GET_MONITOR_PKT_CMD     ; command byte for the serial xmt packet
+    movwf   scratch1
+
+    call    setUpSerialXmtBuffer
+    
+    movf    prevMonitor,W               ; put monitor byte in xmt buf
+    movwi   FSR0++
+    
+    movlw   .2                          ; number of data bytes in packet which are checksummed
+    movwf   scratch0                    ; (includes command -- see notes at top of function)
+    call    calcAndStoreCheckSumSerPrtXmtBuf
+    
+    movlw   .6                          ; number of bytes to send to Rabbit (includes header,
+                                        ; length, command, and checksum -- see top of function)
+
+    call    startSerialPortTransmit
+
+exitProcessMonitor:
+    bcf     statusFlags, MONITOR_SEND_PKT   ; clear for next time this is called
+    bcf     statusFlags, MONITOR_MODE       ;//DEBUG HSS// remove later
+    return
+
+; end of processMonitor
 ;--------------------------------------------------------------------------------------------------
 
 ;--------------------------------------------------------------------------------------------------
@@ -854,6 +980,21 @@ parseCommandFromSerialPacket:
     sublw   RBT_SET_CLOCK_CMD
     btfsc   STATUS,Z
     goto    handleSetClockRbtCmd
+    
+    movf    INDF0, W
+    sublw   RBT_START_MONITOR_CMD
+    btfsc   STATUS,Z
+    goto    handleStartMonitorRbtCmd
+    
+    movf    INDF0, W
+    sublw   RBT_STOP_MONITOR_CMD
+    btfsc   STATUS,Z
+    goto    handleStopMonitorRbtCmd
+    
+    movf    INDF0, W
+    sublw   RBT_GET_MONITOR_PKT_CMD
+    btfsc   STATUS,Z
+    goto    handleStartMonitorRbtCmd            ; this does what we want: forces processMonitor to xmt
 
     goto    resetSerialPortReceiveBuffer
 
@@ -984,6 +1125,40 @@ handleSetClockRbtCmd:
     goto    sendAckPktToRbt
     
 ; end of handleSetClockRbtCmd
+;--------------------------------------------------------------------------------------------------
+    
+;--------------------------------------------------------------------------------------------------
+; handleStartMonitorRbtCmd
+;
+; Handles the RBT_START_MONITOR_CMD command by setting the flag to start monitoring true. Also sets
+; flag to force the monitor packet to be sent 
+;
+
+handleStartMonitorRbtCmd:
+    
+    banksel statusFlags
+    bsf     statusFlags, MONITOR_MODE
+    bsf     statusFlags, MONITOR_SEND_PKT
+    
+    goto    sendAckPktToRbt
+    
+; end of handleStartMonitorRbtCmd
+;--------------------------------------------------------------------------------------------------
+    
+;--------------------------------------------------------------------------------------------------
+; handleStopMonitorRbtCmd
+;
+; Handles the RBT_STOP_MONITOR_CMD command by setting the flag to stop monitoring true.
+;
+
+handleStopMonitorRbtCmd:
+    
+    banksel statusFlags
+    bcf     statusFlags, MONITOR_MODE
+    
+    goto    sendAckPktToRbt
+    
+; end of handleStopMonitorRbtCmd
 ;--------------------------------------------------------------------------------------------------
     
 ;--------------------------------------------------------------------------------------------------
