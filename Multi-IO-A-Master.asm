@@ -768,7 +768,6 @@ mainLoop:
     banksel statusFlags                     ; do monitor stuff if in monitor mode
     btfsc   statusFlags, MONITOR_MODE
     call    processMonitor
-    ;call    handleGetRunDataRbtCmd ;//DEBUG HSS// remove later
 
     goto    mainLoop
     
@@ -852,7 +851,8 @@ processMonitor:
     
     ; made it here, so xmt monitor byte
     
-    movf    scratch0, W                     ; ensure we are sending latest data
+    ;//DEBUG HSS//movf    scratch0, W                     ; ensure we are sending latest data
+    movlw   .5 ;//DEBUG HSS// remove later // temp send so we know we are getting expected byte back
     movwf   prevMonitor
     
     movlw   .3                          ; setup serial port xmt buffer for proper number of bytes
@@ -877,7 +877,6 @@ processMonitor:
 
 exitProcessMonitor:
     bcf     statusFlags, MONITOR_SEND_PKT   ; clear for next time this is called
-    bcf     statusFlags, MONITOR_MODE       ;//DEBUG HSS// remove later
     return
 
 ; end of processMonitor
@@ -982,6 +981,11 @@ parseCommandFromSerialPacket:
     goto    handleSetClockRbtCmd
     
     movf    INDF0, W
+    sublw   RBT_GET_MONITOR_PKT_CMD
+    btfsc   STATUS,Z
+    goto    handleGetMonitorPacketRbtCmd
+    
+    movf    INDF0, W
     sublw   RBT_START_MONITOR_CMD
     btfsc   STATUS,Z
     goto    handleStartMonitorRbtCmd
@@ -990,11 +994,6 @@ parseCommandFromSerialPacket:
     sublw   RBT_STOP_MONITOR_CMD
     btfsc   STATUS,Z
     goto    handleStopMonitorRbtCmd
-    
-    movf    INDF0, W
-    sublw   RBT_GET_MONITOR_PKT_CMD
-    btfsc   STATUS,Z
-    goto    handleStartMonitorRbtCmd            ; this does what we want: forces processMonitor to xmt
 
     goto    resetSerialPortReceiveBuffer
 
@@ -1125,6 +1124,25 @@ handleSetClockRbtCmd:
     goto    sendAckPktToRbt
     
 ; end of handleSetClockRbtCmd
+;--------------------------------------------------------------------------------------------------
+    
+;--------------------------------------------------------------------------------------------------
+; handleGetMonitorPacketRbtCmd
+;
+; Handles the RBT_GET_MONITOR_PKT_CMD command by setting the flag to froce
+; transmission of monitor packet to true and calling processMonitor.
+;
+
+handleGetMonitorPacketRbtCmd:
+    
+    banksel statusFlags
+    bsf     statusFlags, MONITOR_SEND_PKT
+    
+    call    processMonitor
+    
+    goto    resetSerialPortReceiveBuffer
+    
+; end of handleGetMonitorPacketRbtCmd
 ;--------------------------------------------------------------------------------------------------
     
 ;--------------------------------------------------------------------------------------------------
