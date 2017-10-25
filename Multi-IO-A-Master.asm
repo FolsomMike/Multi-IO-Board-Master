@@ -808,6 +808,11 @@ mainLoop:
 
 processMonitor:
     
+    ; bail out if transmitting a different packet
+    banksel PIE1
+    btfsc   PIE1, TXIE
+    goto    exitProcessMonitor  
+    
     banksel statusFlags
 
     clrw                                     ; preload W with zero
@@ -877,6 +882,7 @@ processMonitor:
 
 exitProcessMonitor:
     bcf     statusFlags, MONITOR_SEND_PKT   ; clear for next time this is called
+    bcf	    statusFlags, MONITOR_MODE	    ; //DEBUG HSS// remove later, forcing only one packet send
     return
 
 ; end of processMonitor
