@@ -818,8 +818,8 @@ processMonitor:
     clrw                                     ; preload W with zero
     
     ; Bit values in prevMonitor
-    ;   0 = SYNC_RESET
-    ;   1 = SYNCT_RA1 / SYNCT
+    ;   0 = SYNCT_RA1 / SYNCT
+    ;   1 = SYNC_RESET
     ;   2 = ENC1A
     ;   3 = ENC1B
     ;   4 = ENC2A
@@ -827,10 +827,10 @@ processMonitor:
     ;   6 = unused
     ;   7 = unused
     
-    btfsc   PORTA, SYNC_RESET
+    btfsc   PORTC, SYNCT
     bsf     WREG, 0
     
-    btfsc   PORTC, SYNCT
+    btfsc   PORTA, SYNC_RESET
     bsf     WREG, 1
     
     btfsc   PORTC, ENC1A
