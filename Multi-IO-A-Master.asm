@@ -856,8 +856,9 @@ processMonitor:
     
     ; made it here, so xmt monitor byte
     
-    ;//DEBUG HSS//movf    scratch0, W                     ; ensure we are sending latest data
-    movlw   .5 ;//DEBUG HSS// remove later // temp send so we know we are getting expected byte back
+    bcf     statusFlags, MONITOR_SEND_PKT   ; clear for next time this is called
+    
+    movf    scratch0, W                     ; ensure we are sending latest data
     movwf   prevMonitor
     
     movlw   .3                          ; setup serial port xmt buffer for proper number of bytes
@@ -881,8 +882,6 @@ processMonitor:
     call    startSerialPortTransmit
 
 exitProcessMonitor:
-    bcf     statusFlags, MONITOR_SEND_PKT   ; clear for next time this is called
-    bcf	    statusFlags, MONITOR_MODE	    ; //DEBUG HSS// remove later, forcing only one packet send
     return
 
 ; end of processMonitor
@@ -2280,7 +2279,13 @@ setupPortC:
     bcf     TRISC, RBBT_INT             ; output to Rabbit Interrupt pin
     bsf     TRISC, ENC1A                ; encoder 1, A input
     bsf     TRISC, ENC1B                ; encoder 1, B input
-    bcf     TRISC, SYNCT                ; output to slaves for circumferential clock position
+    ;//DEBUG HSS// //WIP HSS//
+    ;	this is commented out because I am currently working on the code for 
+    ;	a Transverse system, which does not make use of the SYNC line to tell
+    ;	Slave PICs to increment their clocks. In the future, this should default
+    ;	to an output like below. A special command from the host should set it
+    ;	as an input if need be.
+    ;//DEBUG HSS//;bsf     TRISC, SYNCT                ; output to slaves for circumferential clock 
     bsf     TRISC, ENC2A                ; encoder 2, A input
     bsf     TRISC, ENC2B                ; encoder 2, B input
 
